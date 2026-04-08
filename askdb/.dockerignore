@@ -1,0 +1,13 @@
+node_modules
+.next
+data
+.env
+.env.local
+.env.production
+.git
+.gitignore
+.DS_Store
+README.md
+CLAUDE.md
+AGENTS.md
+scripts
