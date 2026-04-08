@@ -45,10 +45,17 @@ export async function syncConnection(connectionId: string) {
 
     tmpDir = await mkdtemp(path.join(tmpdir(), `askdb-dump-${connectionId}-`));
 
-    await runCommand("mongodump", [`--uri=${prodUri}`, `--out=${tmpDir}`]);
-    await runCommand("mongorestore", [`--uri=${sandboxUri}`, "--drop", tmpDir]);
+    const dbName = connection.databaseName;
+    const dumpArgs = [`--uri=${prodUri}`, `--out=${tmpDir}`];
+    const restoreArgs = [`--uri=${sandboxUri}`, "--drop", tmpDir];
+    if (dbName) {
+      dumpArgs.push(`--db=${dbName}`);
+      restoreArgs.push(`--nsFrom=${dbName}.*`, `--nsTo=${dbName}.*`);
+    }
+    await runCommand("mongodump", dumpArgs);
+    await runCommand("mongorestore", restoreArgs);
 
-    await introspectAndSave(connectionId, sandboxUri);
+    await introspectAndSave(connectionId, sandboxUri, dbName || undefined);
 
     await db
       .update(connections)

@@ -6,3 +6,4 @@ data/
 .env.local
 *.db
 *.db-journal
+.mcp.json

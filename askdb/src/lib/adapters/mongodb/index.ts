@@ -2,7 +2,7 @@ import { MongoClient } from "mongodb";
 import type { DatabaseAdapter, IntrospectionResult, QueryResult } from "../types";
 
 export class MongoDBAdapter implements DatabaseAdapter {
-  async validateConnection(connString: string) {
+  async validateConnection(connString: string, databaseName?: string) {
     const client = new MongoClient(connString, {
       serverSelectionTimeoutMS: 10000,
       connectTimeoutMS: 10000,
@@ -10,8 +10,9 @@ export class MongoDBAdapter implements DatabaseAdapter {
 
     try {
       await client.connect();
-      // Test that we can actually list databases
-      await client.db().admin().listDatabases();
+      // Ping the specific database instead of requiring admin listDatabases
+      const db = databaseName ? client.db(databaseName) : client.db();
+      await db.command({ ping: 1 });
       return { valid: true };
     } catch (err) {
       const message =
@@ -22,14 +23,14 @@ export class MongoDBAdapter implements DatabaseAdapter {
     }
   }
 
-  async getDatabaseSize(connString: string) {
+  async getDatabaseSize(connString: string, databaseName?: string) {
     const client = new MongoClient(connString, {
       serverSelectionTimeoutMS: 10000,
     });
 
     try {
       await client.connect();
-      const db = client.db();
+      const db = databaseName ? client.db(databaseName) : client.db();
       const stats = await db.stats();
       const collections = await db.listCollections().toArray();
 

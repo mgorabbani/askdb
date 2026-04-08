@@ -16,18 +16,26 @@ export async function POST(req: Request) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { name, connectionString } = body as { name?: string; connectionString?: string };
+  const { name, connectionString, databaseName } = body as {
+    name?: string;
+    connectionString?: string;
+    databaseName?: string;
+  };
 
   if (!name || !connectionString) {
     return NextResponse.json({ error: "Name and connection string are required" }, { status: 400 });
   }
 
-  const validation = await adapter.validateConnection(connectionString);
+  if (!databaseName) {
+    return NextResponse.json({ error: "Database name is required" }, { status: 400 });
+  }
+
+  const validation = await adapter.validateConnection(connectionString, databaseName);
   if (!validation.valid) {
     return NextResponse.json({ error: `Connection failed: ${validation.error}` }, { status: 400 });
   }
 
-  const size = await adapter.getDatabaseSize(connectionString);
+  const size = await adapter.getDatabaseSize(connectionString, databaseName);
   if (size.sizeBytes > MAX_DB_SIZE) {
     return NextResponse.json({
       error: `Database too large (${formatBytes(size.sizeBytes)}). Maximum is 20GB.`,
@@ -44,6 +52,7 @@ export async function POST(req: Request) {
     .values({
       name,
       dbType: "mongodb",
+      databaseName,
       connectionString: encryptedConnString,
       userId: session.user.id,
     })

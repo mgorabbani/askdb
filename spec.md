@@ -60,21 +60,20 @@ Paste MongoDB URL → askdb clones to sandbox → see real sample rows
 ### System Diagram
 ```
 ┌─────────────────────────────────────────────────┐
-│                   VPS (Docker)                    │
+│                   Your Server                     │
 │                                                   │
 │  ┌──────────────┐       ┌───────────────┐        │
-│  │  Next.js App │──────▶│  App Database │        │
-│  │  (Dashboard  │       │  (SQLite)     │        │
-│  │   + API      │       └───────────────┘        │
-│  │   + MCP)     │                                │
-│  └──────┬───────┘                                │
-│         │                                        │
-│   ┌─────▼────────┐                               │
-│   │  Sandbox     │◀ ─ ─ mongodump/mongorestore   │
-│   │  MongoDB     │      from user's prod         │
-│   │  Container   │                               │
-│   │  (volume)    │                               │
-│   └──────────────┘                               │
+│  │  Express      │──────▶│  App Database │        │
+│  │  (API + UI)   │       │  (SQLite)     │        │
+│  │  :3100        │       └───────────────┘        │
+│  └──────────────┘                                │
+│                                                   │
+│  ┌──────────────┐       ┌───────────────┐        │
+│  │  MCP Server  │──────▶│  Sandbox      │        │
+│  │  :3001       │       │  MongoDB      │◀── mongodump/mongorestore
+│  └──────────────┘       │  Container    │    from user's prod
+│                          │  (volume)     │
+│                          └───────────────┘
 └─────────────────────────────────────────────────┘
           ▲
           │ MCP (Streamable HTTP)
@@ -86,10 +85,12 @@ Paste MongoDB URL → askdb clones to sandbox → see real sample rows
 ```
 
 **Key decisions:**
-- **Monolith** — Next.js serves dashboard, API, and MCP endpoint. Single process, no reverse proxy.
-- **SQLite** — app database. File-based, zero config, perfect for single-user self-hosted. Prisma ORM.
+- **Express + Vite React** — Express serves API routes and the React SPA. In development, Vite runs as Express middleware (HMR). In production, Express serves pre-built static assets.
+- **Separate MCP process** — MCP server runs as standalone Express on port 3001, sharing SQLite via `DATABASE_PATH` env var.
+- **SQLite** — app database. File-based, zero config, perfect for single-user self-hosted. Drizzle ORM.
 - **Docker volumes** — sandbox MongoDB data persists across container restarts/crashes.
 - **Dynamic container** — sandbox MongoDB is created by the app via `dockerode` when user connects a database, not pre-defined in docker-compose.
+- **pnpm monorepo** — packages/shared, packages/mcp-server, packages/cli, server/, ui/. Following Paperclip's architecture patterns.
 
 ### Data Flow
 ```
@@ -168,8 +169,9 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 ## MCP Server Spec
 
 ### Endpoint
-- `http://<VPS_IP>:3000/mcp`
+- `http://<VPS_IP>:3001/mcp`
 - Auth: Bearer token (API key)
+- Runs as separate Express process from the main API server
 
 ### 4 MCP Tools
 
@@ -207,9 +209,11 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 ## Pages & UI
 
 ### Tech Stack
-- Next.js (App Router) + TypeScript
-- shadcn/ui (with `shadcn apply` for design presets)
-- Prisma + SQLite
+- Vite + React 19 (SPA with React Router)
+- Express (API server, serves UI in production)
+- shadcn/ui (with Tailwind CSS v4)
+- Drizzle ORM + SQLite
+- Better Auth (email/password)
 
 ### Page Map
 
@@ -284,7 +288,7 @@ ask_sk_{random_32_chars}
 
 ## Data Model
 
-### Tables (SQLite via Prisma)
+### Tables (SQLite via Drizzle ORM)
 
 - **users** — Single admin account (email, bcrypt hashed password)
 - **connections** — MongoDB connections (encrypted connection string, sandbox container ID, last_sync_at, sync_status)
@@ -295,34 +299,71 @@ ask_sk_{random_32_chars}
 
 ---
 
-## Self-Hosted Setup
+## Deployment Modes
 
-### One-Command Install
+### 1. Local (`npx askdb onboard`)
+
+Zero-setup local experience for trying askdb:
+
+```bash
+npx askdb onboard --yes
+```
+
+What the CLI does:
+1. Checks prerequisites (Node.js 20+, Docker running)
+2. Generates `.env` with random secrets (BETTER_AUTH_SECRET, ENCRYPTION_KEY)
+3. Runs `pnpm install`
+4. Applies DB migrations
+5. Starts Express server with Vite dev middleware on port 3100
+6. Opens browser to `http://localhost:3100`
+
+### 2. VPS (Docker / `curl | bash`)
+
+Self-hosted production:
+
 ```bash
 curl -sSL https://get.askdb.dev | bash
 ```
 
-### What the installer does:
+What the installer does:
 1. Checks OS (Linux) and architecture
 2. Installs Docker if not present
-3. Generates secrets (JWT signing key, encryption key) → `.env`
+3. Generates secrets → `.env`
 4. Pulls app Docker image
 5. Starts container via `docker compose up -d`
-6. Prints: `Open http://<detected-IP>:3000`
+6. Prints: `Open http://<detected-IP>:3100`
+
+### 3. Cloud (future roadmap)
+
+Managed cloud version at askdb.dev. Not in MVP scope.
 
 ### Docker Compose
 ```yaml
 services:
   app:
     image: askdb/askdb:latest
-    ports: ["3000:3000"]
+    ports:
+      - "3100:3100"   # Dashboard + API
+      - "3001:3001"   # MCP server
     volumes:
       - ./data:/app/data                              # SQLite DB
       - /var/run/docker.sock:/var/run/docker.sock      # manage sandbox containers
+    environment:
+      - SERVE_UI=true
     env_file: .env
 ```
 
 Sandbox MongoDB container is created dynamically by the app (not in compose). Uses Docker named volumes for data persistence.
+
+### Server UI Modes
+
+The Express server selects how to serve UI based on environment:
+
+| Mode | Env Var | Behavior |
+|------|---------|----------|
+| `vite-dev` | `UI_DEV_MIDDLEWARE=true` | Vite middleware in Express (HMR, live reload) |
+| `static` | `SERVE_UI=true` | Pre-built `ui/dist/` served via `express.static()` + SPA catch-all |
+| `none` | neither | API-only, no UI |
 
 ### Sync (Manual Only)
 1. User clicks "Sync Now" on dashboard
@@ -387,10 +428,49 @@ Auto-detection flags fields as "recommended to hide" based on field name pattern
 
 ---
 
+## Monorepo Structure
+
+```
+askdb/
+├── pnpm-workspace.yaml
+├── tsconfig.base.json
+├── package.json                  # Root workspace scripts
+├── scripts/
+│   └── dev-runner.ts             # Dev orchestration (watch + restart)
+├── server/                       # @askdb/server — Express API
+│   └── src/
+│       ├── index.ts              # Entry: Express + Vite middleware / static serving
+│       ├── routes/               # API routes (connections, keys, audit, auth)
+│       └── lib/                  # Server-only (auth session, etc.)
+├── ui/                           # @askdb/ui — Vite React SPA
+│   └── src/
+│       ├── pages/                # React Router pages
+│       ├── components/           # shadcn + custom components
+│       └── lib/                  # Auth client, utils
+├── packages/
+│   ├── shared/                   # @askdb/shared — DB schema, adapters, crypto
+│   │   └── src/
+│   │       ├── db/               # Drizzle schema + connection
+│   │       ├── crypto/           # AES-256-GCM encryption
+│   │       ├── adapters/         # DatabaseAdapter interface + MongoDB
+│   │       ├── docker/           # Sandbox container management
+│   │       ├── pii/              # PII detection patterns
+│   │       ├── memory/           # Query pattern extraction
+│   │       └── schema-summary/   # Schema markdown for agents
+│   ├── mcp-server/               # @askdb/mcp-server — standalone MCP
+│   │   └── src/server.ts
+│   └── cli/                      # askdb-cli — CLI tool
+│       └── src/
+├── data/                         # SQLite DB (shared via DATABASE_PATH)
+└── docker/                       # Dockerfile, docker-compose, install script
+```
+
+---
+
 ## MVP Scope
 
 ### Phase 1: Core Engine
-- Project scaffolding (Next.js + shadcn + Prisma + SQLite)
+- Project scaffolding (Vite React + Express + shadcn + Drizzle + SQLite)
 - Database adapter interface
 - MongoDB adapter (dump/restore via mongodump/mongorestore)
 - Dynamic sandbox container management (dockerode + volumes)

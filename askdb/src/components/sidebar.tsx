@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Database, Key, ScrollText, LayoutDashboard } from "lucide-react";
+import { Database, Key, ScrollText, LayoutDashboard, Plug } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/keys", label: "API Keys", icon: Key },
+  { href: "/dashboard/setup", label: "MCP Setup", icon: Plug },
   { href: "/dashboard/audit", label: "Audit Log", icon: ScrollText },
 ];
 

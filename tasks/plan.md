@@ -1,270 +1,251 @@
-# askdb — Implementation Plan
+# askdb — Monorepo Restructuring Plan
 
 ## Context
 
-Building **askdb**, a self-hosted single-user tool that bridges MongoDB and AI agents via MCP (Model Context Protocol). User connects their MongoDB, data is cloned to a sandbox container, they configure field visibility, and get an MCP URL for Claude/ChatGPT/Cursor. Hidden fields are stripped at query time — AI never sees them.
+The `askdb/` directory currently contains everything in a Next.js monolith: frontend pages, API routes, MCP server, and all shared libraries. The MCP server (`src/mcp/server.ts`) duplicates ~150 lines of shared logic. We're replacing Next.js with Vite React + Express, following Paperclip's monorepo patterns.
 
-**Scope:** MongoDB only, single user, self-hosted, manual sync, no cloud/team/billing.
+## Current → Target
 
-## Tech Stack
-- Next.js (latest, App Router) + TypeScript + custom `server.ts` (for MCP Express endpoint)
-- shadcn/ui (with `shadcn apply` presets)
-- Prisma + SQLite
-- dockerode (sandbox container management)
-- @modelcontextprotocol/sdk (MCP server via Express)
-- mongodump/mongorestore (CLI, child_process.spawn)
-- pnpm
+```
+CURRENT:                              TARGET:
+askdb/                                pnpm-workspace.yaml
+├── src/                              tsconfig.base.json
+│   ├── app/        (Next.js pages)   package.json
+│   ├── app/api/    (Next.js API)     scripts/
+│   ├── mcp/        (MCP server)        dev-runner.ts
+│   ├── components/ (React UI)        server/              @askdb/server
+│   └── lib/        (ALL shared)        src/
+├── data/                               ├── index.ts       (entry: Express + Vite middleware/static)
+└── ...                                 ├── routes/        (Express API routes from Next.js API)
+                                        └── lib/           (server-only: auth session, etc.)
+askdb-cli/                            ui/                  @askdb/ui
+                                        src/
+                                        ├── pages/         (React Router from Next.js pages)
+                                        ├── components/    (React UI components)
+                                        └── lib/           (auth-client, utils)
+                                      packages/
+                                        shared/            @askdb/shared
+                                        mcp-server/        @askdb/mcp-server
+                                        cli/               askdb-cli
+                                      data/                (SQLite, shared via env var)
+```
 
-## Architecture Note
-MCP SDK requires Express `req`/`res`. Next.js App Router uses Web `Request`/`Response`. Solution: custom `server.ts` that boots both Next.js and an Express app on port 3000. Express handles `/mcp`, Next.js handles everything else.
+## Runtime Architecture (following Paperclip)
+
+### Development
+```
+dev-runner.ts
+  │
+  ├── spawns Express server (server/src/index.ts via tsx)
+  │     ├── API routes on /api/*
+  │     ├── Vite dev middleware (HMR, live reload)
+  │     └── catch-all → index.html (SPA routing)
+  │
+  └── watches: server/, ui/, packages/shared/, packages/mcp-server/
+      → auto-restart on backend changes
+      → Vite HMR handles frontend changes
+```
+
+Single port (e.g., 3100). No separate Vite dev server needed — Vite runs as Express middleware.
+
+### Production
+```
+Express server
+  ├── API routes on /api/*
+  ├── express.static(ui/dist/)     ← pre-built Vite output
+  └── catch-all → index.html       ← SPA routing
+```
+
+Same single port. `SERVE_UI=true` env var tells Express to serve static UI.
+
+### MCP Server
+Separate process on port 3001 (unchanged from current design). Shares SQLite via `DATABASE_PATH` env var.
 
 ## Dependency Graph
 
 ```
-T1 (Scaffolding)
-├── T2 (Prisma Schema) ─────┐
-│                            ├── T4 (Auth)
-├── T3 (Layout + shadcn) ───┘
-│       │
-│       ├── T5 (Dashboard Page)
-│       └── T11 (Schema Browser UI)
-│
-T4 ──── T6 (Connection Wizard) ── T7 (Docker Sandbox) ── T8 (Sync) ── T9 (Schema + PII)
-                                                                            │
-                                          T10 (Visibility API) ────────────┘
-                                          │       │
-                                    T11 (UI)    T12 (MCP Server) ── T14 (Validation + Filtering)
-                                                │                         │
-                                          T13 (API Keys)           T15 (Audit Log)
-                                                │
-                                          T18 (Setup Page)    T16 (Manual Sync)
-                                                              T17 (Audit Viewer)
+@askdb/shared ← @askdb/server (Express API + serves UI)
+              ← @askdb/mcp-server (standalone Express MCP)
+              ← @askdb/ui (only for shared types, if needed)
 
-T19 (Docker Deploy) ── T20 (Installer)
+@askdb/ui has NO runtime dependency on shared — it talks to server via HTTP/fetch
 ```
 
-## Project Structure
+## What Goes Where
+
+### @askdb/shared (`packages/shared/`)
+Shared between server and mcp-server. No React, no Express — pure logic.
+
+| Module | Source |
+|--------|--------|
+| `db/schema.ts` | from `askdb/src/lib/db/schema.ts` |
+| `db/index.ts` | from `askdb/src/lib/db/index.ts` |
+| `crypto/encryption.ts` | from `askdb/src/lib/crypto/encryption.ts` |
+| `auth/api-keys.ts` | from `askdb/src/lib/auth/api-keys.ts` |
+| `adapters/types.ts` | from `askdb/src/lib/adapters/types.ts` |
+| `adapters/mongodb/*` | from `askdb/src/lib/adapters/mongodb/` |
+| `docker/manager.ts` | from `askdb/src/lib/docker/manager.ts` |
+| `pii/patterns.ts` | from `askdb/src/lib/pii/patterns.ts` |
+| `memory/extractor.ts` | from `askdb/src/lib/memory/extractor.ts` |
+| `schema-summary/generator.ts` | from `askdb/src/lib/schema-summary/generator.ts` |
+
+### @askdb/server (`server/`)
+Express backend. Replaces Next.js API routes.
+
+| Module | Source |
+|--------|--------|
+| `routes/connections.ts` | from `askdb/src/app/api/connections/route.ts` + sub-routes |
+| `routes/keys.ts` | from `askdb/src/app/api/keys/` routes |
+| `routes/audit.ts` | from `askdb/src/app/api/audit/route.ts` |
+| `routes/auth.ts` | from `askdb/src/app/api/auth/` route |
+| `lib/auth.ts` | from `askdb/src/lib/auth.ts` (better-auth, adapted for Express) |
+| `lib/session.ts` | from `askdb/src/lib/auth/session.ts` (adapted for Express req/res) |
+| `index.ts` | new — Express app with Vite middleware (dev) / static serving (prod) |
+
+### @askdb/ui (`ui/`)
+Vite React SPA. Replaces Next.js pages.
+
+| Module | Source |
+|--------|--------|
+| `pages/login.tsx` | from `askdb/src/app/(auth)/login/page.tsx` |
+| `pages/setup.tsx` | from `askdb/src/app/(auth)/setup/page.tsx` |
+| `pages/dashboard/index.tsx` | from `askdb/src/app/(dashboard)/dashboard/page.tsx` |
+| `pages/dashboard/connect.tsx` | from `askdb/src/app/(dashboard)/dashboard/connect/page.tsx` |
+| `pages/dashboard/keys.tsx` | from `askdb/src/app/(dashboard)/dashboard/keys/page.tsx` |
+| `pages/dashboard/audit.tsx` | from `askdb/src/app/(dashboard)/dashboard/audit/page.tsx` |
+| `pages/dashboard/schema/[id].tsx` | from `askdb/src/app/(dashboard)/dashboard/connections/[id]/schema/page.tsx` |
+| `pages/dashboard/setup/[keyId].tsx` | from `askdb/src/app/(dashboard)/dashboard/setup/[keyId]/page.tsx` |
+| `components/*` | from `askdb/src/components/` |
+| `lib/auth-client.ts` | from `askdb/src/lib/auth-client.ts` |
+| `lib/utils.ts` | from `askdb/src/lib/utils.ts` |
+
+Key changes:
+- `next/navigation` → `react-router-dom`
+- `next/link` → `<Link>` from react-router
+- Server components → client components with `fetch()` calls
+- `useRouter().push()` → `useNavigate()`
+
+### @askdb/mcp-server (`packages/mcp-server/`)
+Standalone Express MCP process (same as before, refactored to import from shared).
+
+### askdb-cli (`packages/cli/`)
+HTTP-based CLI (unchanged internals, just moved).
+
+## Package Scripts (following Paperclip)
+
+### Root `package.json`
+```
+"dev"         → tsx scripts/dev-runner.ts watch
+"dev:once"    → tsx scripts/dev-runner.ts dev
+"dev:server"  → pnpm --filter @askdb/server dev
+"dev:ui"      → pnpm --filter @askdb/ui dev
+"dev:mcp"     → pnpm --filter @askdb/mcp-server dev
+"build"       → pnpm -r build
+"typecheck"   → pnpm -r typecheck
+"db:generate" → pnpm --filter @askdb/shared db:generate
+"db:migrate"  → pnpm --filter @askdb/shared db:migrate
+```
+
+### `server/package.json`
+```
+"dev"   → tsx src/index.ts
+"build" → tsc
+"start" → node dist/index.js
+```
+
+### `ui/package.json`
+```
+"dev"   → vite
+"build" → tsc -b && vite build
+```
+
+## Dev Runner Behavior (from Paperclip)
+
+`scripts/dev-runner.ts`:
+- Spawns Express server child process via `tsx`
+- Watches: `server/`, `packages/shared/`, `packages/mcp-server/`, `scripts/`, `.env`
+- Ignores: `node_modules/`, `dist/`, `.git/`, `ui/` (Vite HMR handles UI)
+- Poll interval: ~1.5s for changes, ~2.5s for restart eligibility
+- Graceful shutdown: SIGTERM → 10s timeout → SIGKILL
+- Runs DB migrations before first start
+
+## Auth Adaptation
+
+Current: `better-auth` configured for Next.js (`toNextJsHandler`, `next/headers`).
+New: `better-auth` supports Express natively via `toExpressHandler`. Session via `auth.api.getSession({ headers: fromNodeHeaders(req.headers) })`.
+
+## Deployment Modes (following Paperclip)
+
+Three ways to run askdb, matching Paperclip's pattern:
+
+### 1. Local (`npx askdb onboard`)
+Zero-setup local experience. The CLI `onboard` command:
+1. Checks prerequisites (Node.js 20+, Docker running)
+2. Clones/inits the project if not in a project dir
+3. Generates `.env` with random secrets (BETTER_AUTH_SECRET, ENCRYPTION_KEY)
+4. Runs `pnpm install`
+5. Applies DB migrations
+6. Starts the server (Express + Vite dev middleware on port 3100)
+7. Opens browser to `http://localhost:3100`
+
+SQLite is zero-config. Docker is needed for MongoDB sandbox containers (user must have Docker running).
+
+The CLI is published to npm as `askdb` so `npx askdb onboard --yes` works globally.
+
+### 2. VPS (Docker / `curl | bash`)
+Self-hosted on any VPS:
+```bash
+curl -sSL https://get.askdb.dev | bash
+```
+Uses Docker Compose. Multi-stage Dockerfile builds all packages. Express serves pre-built UI static assets (`SERVE_UI=true`). MCP server runs as separate process in same container.
+
+### 3. Cloud (future roadmap)
+Managed cloud version at askdb.dev. Not in MVP scope.
+
+### Server Entry Point Mode Selection (from Paperclip)
+
+`server/src/index.ts` selects UI mode based on environment:
 
 ```
-askdb/
-├── prisma/schema.prisma
-├── server.ts                          # Custom server: Next.js + Express for /mcp
-├── src/
-│   ├── app/
-│   │   ├── (auth)/login/ setup/
-│   │   ├── (dashboard)/dashboard/
-│   │   │   ├── connect/
-│   │   │   ├── connections/[id]/schema/
-│   │   │   ├── keys/
-│   │   │   ├── audit/
-│   │   │   └── setup/[keyId]/
-│   │   └── api/ (connections, schema, keys, audit, auth)
-│   ├── lib/
-│   │   ├── adapters/types.ts          # DatabaseAdapter interface
-│   │   ├── adapters/mongodb/          # MongoDB implementation
-│   │   ├── mcp/server.ts             # MCP server + tools
-│   │   ├── mcp/validation/           # Query + pipeline validators
-│   │   ├── mcp/filtering/            # Field stripping
-│   │   ├── auth/                     # JWT, bcrypt, API keys
-│   │   ├── crypto/                   # Connection string encryption
-│   │   ├── docker/                   # dockerode wrapper
-│   │   └── pii/                      # PII detection patterns
-│   └── components/                   # shadcn + custom
-├── docker/Dockerfile, docker-compose.yml
-└── scripts/install.sh
+const uiMode = env.UI_DEV_MIDDLEWARE ? "vite-dev"
+             : env.SERVE_UI          ? "static"
+             :                         "none";
 ```
 
----
+| Mode | When | Behavior |
+|------|------|----------|
+| `vite-dev` | `pnpm dev` / local onboard | Vite middleware in Express, HMR |
+| `static` | Docker / VPS production | `express.static(ui/dist/)` + SPA catch-all |
+| `none` | API-only (testing, headless) | No UI served |
 
-## Phase 1: Foundation
-**Goal:** Working app with auth and dashboard shell.
+## Task Sequence
 
-### T1: Project Scaffolding + Custom Server [M]
-- `pnpm create next-app@latest` + shadcn init + custom `server.ts` (Next.js + Express on :3000)
-- TypeScript, path aliases, ESLint, directory stubs
-- **Verify:** `pnpm dev` → page loads, `tsc --noEmit` passes
-
-### T2: Prisma Schema + Database Layer [M]
-- Full schema: users, connections, schema_tables, schema_columns, api_keys, audit_logs
-- Prisma client singleton, SQLite WAL mode
-- AES-256-GCM encryption util for connection strings
-- **Verify:** `prisma migrate dev` works, encrypt/decrypt round-trips
-
-### T3: Layout Shell + shadcn/ui [S]
-- Dashboard layout (sidebar + content), auth layout (centered card)
-- shadcn components: button, input, card, table, badge, switch, dialog, toast
-- **Verify:** `/dashboard` shows shell, responsive sidebar
-- **Parallel with T2**
-
-### T4: Authentication [M]
-- First-run `/setup` (create admin, only if no users exist)
-- `/login` with email/password, bcrypt, JWT in httpOnly cookie
-- Middleware: no user → /setup, no JWT → /login
-- **Verify:** Fresh DB → setup → dashboard → logout → login flow works
-- **Depends on T2, T3**
-
-### CHECKPOINT 1: `pnpm dev` boots, auth works, dashboard shell renders, Prisma schema complete.
-
----
-
-## Phase 2: Core Engine
-**Goal:** Connect MongoDB, spin up sandbox, sync data, introspect schema. API-only.
-
-### T5: Dashboard Overview Page [S]
-- Connection list (empty state + connection cards)
-- "Connect Database" CTA
-- **Parallel with T6**
-
-### T6: Connection Wizard API + UI [M]
-- `DatabaseAdapter` interface in `lib/adapters/types.ts`
-- MongoDB adapter: validate connection, check size (warn >5GB, reject >20GB)
-- API: POST/GET/DELETE `/api/connections`
-- Connect form UI
-- **Verify:** POST valid MongoDB URL → connection created, encrypted in SQLite
-
-### T7: Docker Sandbox Manager [L]
-- dockerode wrapper: create/start/stop/destroy sandbox containers
-- Named volumes for data persistence, port allocation (27100-27199)
-- Container labels, health checks
-- **Verify:** `createSandbox()` → `docker ps` shows container, `mongosh` connects
-
-### T8: mongodump/mongorestore Sync [L]
-- Spawn `mongodump` from prod → temp dir → `mongorestore` to sandbox
-- Status lifecycle: IDLE → SYNCING → COMPLETED/FAILED
-- Temp dir cleanup on success/failure
-- **Verify:** Sync real MongoDB → sandbox has same data
-
-### T9: Schema Introspection + PII Detection [M]
-- Introspect sandbox: collections, fields, types, doc counts, sample docs
-- Nested field support (dot notation)
-- PII pattern matcher (HIGH/MEDIUM/LOW confidence)
-- HIGH+MEDIUM auto-hidden, LOW flagged
-- **Verify:** Sync DB with `email` field → auto-hidden, `status` field → visible
-
-### CHECKPOINT 2: Full pipeline works via API: connect → sandbox → sync → introspect → PII detected.
-
----
-
-## Phase 3: Dashboard + MCP
-**Goal:** Schema browser UI, MCP server with filtered responses, API keys.
-
-### T10: Visibility Config API [S]
-- GET schema tree, PATCH table/field visibility, POST re-run PII detection
-- **Parallel with T13**
-
-### T11: Schema Browser UI [L]
-- Accordion table: collections → fields, toggle switches, PII badges, sample values
-- Optimistic UI, bulk actions ("Hide All PII")
-- **Depends on T10, T3**
-
-### T12: MCP Server with 4 Tools [L]
-- `@modelcontextprotocol/sdk` + `StreamableHTTPServerTransport` on Express
-- Bearer token auth via API keys
-- 4 tools: list_tables, describe_table, query, sample_data
-- Load visibility config, strip hidden fields
-- **Depends on T10**
-
-### T13: API Key Management [S]
-- Generate `ask_sk_{32chars}`, hash with SHA-256, store prefix
-- Create/list/revoke API + UI
-- **Parallel with T10, T11, T12**
-
-### CHECKPOINT 3: Schema browser works, MCP server responds to tool calls with filtered data, API keys work.
-
----
-
-## Phase 4: Security + Polish
-**Goal:** Production-safe query validation, audit trail, sync UI.
-
-### T14: Query Validation + Field Filtering [L]
-- Allowlist: find, aggregate, count, distinct
-- Reject: $merge, $out, $collStats, $currentOp, $listSessions
-- Reject: $lookup on hidden collections
-- Field stripping on all responses (nested field support)
-- 10s timeout, 500 doc limit
-- **THE critical security task**
-- **Verify:** Hidden fields never appear in any MCP response (adversarial testing)
-
-### T15: Audit Logging [S]
-- Log every MCP tool call: action, query, collection, execution time, doc count, API key
-- **Parallel with T14**
-
-### T16: Manual Sync + Status UI [M]
-- "Sync Now" button, status polling, container health indicator
-- Re-introspect after sync, preserve existing visibility settings
-- **Parallel with T14, T15**
-
-### T17: Audit Log Viewer UI [S]
-- Paginated table with date/collection/action filters, expandable rows
-
-### T18: MCP Setup Instructions Page [S]
-- Tabbed instructions: Claude Desktop, ChatGPT, Cursor
-- Copy buttons for MCP URL + API key
-- **Parallel with T17**
-
-### CHECKPOINT 4: All security invariants verified, audit trail complete, full e2e flow works.
-
----
-
-## Phase 5: Deployment
-**Goal:** Docker deploy + one-command installer.
-
-### T19: Dockerfile + docker-compose [M]
-- Multi-stage build (deps → build → runtime with mongodump/mongorestore)
-- Docker socket mount, SQLite volume, env file
-- **Verify:** `docker compose up` → full e2e flow works
-
-### T20: curl|bash Installer [S]
-- Check OS/Docker, generate secrets, pull image, start, print URL
-- Idempotent (re-run safe)
-- **Verify:** Fresh Ubuntu VPS → `curl | bash` → app running
-
-### CHECKPOINT 5: Ship-ready. Clean install on VPS works end-to-end.
-
----
-
-## Summary
-
-| # | Task | Phase | Size | Depends On | Parallel With |
-|---|------|-------|------|-----------|--------------|
-| T1 | Scaffolding + Custom Server | 1 | M | — | — |
-| T2 | Prisma Schema + DB | 1 | M | T1 | T3 |
-| T3 | Layout Shell + shadcn | 1 | S | T1 | T2 |
-| T4 | Auth (Setup + Login + JWT) | 1 | M | T2, T3 | — |
-| T5 | Dashboard Overview | 2 | S | T4 | T6 |
-| T6 | Connection Wizard | 2 | M | T4 | T5 |
-| T7 | Docker Sandbox Manager | 2 | L | T6 | — |
-| T8 | Sync (dump/restore) | 2 | L | T7 | — |
-| T9 | Schema Introspection + PII | 2 | M | T8 | — |
-| T10 | Visibility Config API | 3 | S | T9 | T13 |
-| T11 | Schema Browser UI | 3 | L | T10, T3 | T13 |
-| T12 | MCP Server (4 tools) | 3 | L | T10 | T11, T13 |
-| T13 | API Key Management | 3 | S | T2, T4 | T10-T12 |
-| T14 | Query Validation + Filtering | 4 | L | T12 | T15 |
-| T15 | Audit Logging | 4 | S | T12 | T14 |
-| T16 | Manual Sync + Status UI | 4 | M | T8, T9 | T14, T15 |
-| T17 | Audit Log Viewer UI | 4 | S | T15 | T18 |
-| T18 | MCP Setup Instructions | 4 | S | T12, T13 | T17 |
-| T19 | Dockerfile + docker-compose | 5 | M | All | — |
-| T20 | Installer Script | 5 | S | T19 | — |
-
-**20 tasks: 6S + 6M + 5L**
-
-## Verification (end-to-end)
-
-1. `curl | bash` on clean VPS → app running
-2. Visit `http://<IP>:3000` → setup page → create admin
-3. Connect MongoDB → sandbox created → data synced
-4. Schema browser → toggle fields → PII auto-hidden
-5. Create API key → copy MCP URL
-6. Configure Claude Desktop → ask "how many users?" → get answer with hidden fields omitted
-7. Check audit log → query logged
-8. Sync again → data refreshed, visibility preserved
-9. Stop/restart Docker → everything persists
+```
+R1 (Root workspace + tsconfig.base + pnpm-workspace)
+  │
+  ├── R2 (Create @askdb/shared — move shared libs)
+  │     │
+  │     ├── R3 (Create server/ — Express API from Next.js routes)
+  │     │
+  │     ├── R4 (Create ui/ — Vite React from Next.js pages)
+  │     │
+  │     └── R5 (Extract MCP server → packages/mcp-server/)
+  │
+  ├── R6 (Move askdb-cli/ → packages/cli/)  ← parallel with R2
+  │
+  R7 (Dev runner script)  ← after R3, R4
+  │
+  R8 (Docker + deployment)  ← after R3, R4, R5
+  │
+  R9 (CLI onboard command)  ← after R7
+  │
+  R10 (Verify full e2e + delete askdb/)
+```
 
 ## Risks
-1. **MCP SDK + Next.js**: Custom server.ts bridges the gap. Well-documented pattern.
-2. **Docker-in-Docker**: Socket mount for sibling containers. Standard CI/CD pattern.
-3. **mongodump availability**: Install `mongodb-database-tools` in Dockerfile runtime stage.
-4. **SQLite concurrency**: WAL mode handles single-user fine.
-5. **Field filtering bypass**: Adversarial testing in T14 is critical — test $project, $addFields, $replaceRoot, $unwind.
+
+1. **better-auth Express adapter** — well-supported, documented at better-auth.com
+2. **Server components → client fetch** — Next.js server components that query DB directly (e.g., dashboard page) become client components that call API endpoints. May need new API routes for data that was fetched server-side.
+3. **Vite middleware mode** — well-documented pattern, used by Paperclip in production
+4. **React Router** — replaces Next.js file-based routing. Need to define routes manually.
+5. **npx global install** — CLI must be published to npm for `npx askdb onboard` to work. During dev, use `pnpm --filter askdb-cli exec tsx src/index.ts onboard`.

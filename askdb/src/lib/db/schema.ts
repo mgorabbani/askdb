@@ -58,6 +58,7 @@ export const connections = sqliteTable("connections", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(),
   dbType: text("dbType").notNull().default("mongodb"),
+  databaseName: text("databaseName").notNull().default(""),
   connectionString: text("connectionString").notNull(), // AES-256-GCM encrypted
   sandboxContainerId: text("sandboxContainerId"),
   sandboxPort: integer("sandboxPort"),

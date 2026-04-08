@@ -8,12 +8,12 @@ import { detectRelationships } from "./relationships";
 const SYSTEM_COLLECTIONS = /^system\./;
 const INTERNAL_COLLECTIONS = new Set(["_migrations", "_sessions", "__schema"]);
 
-export async function introspectAndSave(connectionId: string, sandboxUri: string) {
+export async function introspectAndSave(connectionId: string, sandboxUri: string, databaseName?: string) {
   const client = new MongoClient(sandboxUri, { serverSelectionTimeoutMS: 10000 });
 
   try {
     await client.connect();
-    const mdb = client.db();
+    const mdb = databaseName ? client.db(databaseName) : client.db();
     const collectionInfos = await mdb.listCollections().toArray();
 
     for (const info of collectionInfos) {
