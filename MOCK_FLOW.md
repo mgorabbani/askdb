@@ -1,4 +1,4 @@
-# dbgate — Complete Mock Flow
+# askdb — Complete Mock Flow
 
 > End-to-end walkthrough: from a fresh VPS to a team member asking Claude about company data.
 
@@ -18,10 +18,10 @@ root@vps:~#
 ### Scene 1.2 — Run the installer
 
 ```
-root@vps:~# curl -sSL https://get.dbgate.dev | bash
+root@vps:~# curl -sSL https://get.askdb.dev | bash
 
   ┌─────────────────────────────────────┐
-  │   dbgate — Self-Hosted Installer    │
+  │   askdb — Self-Hosted Installer    │
   └─────────────────────────────────────┘
 
 Checking system...
@@ -34,16 +34,16 @@ Checking system...
 
 Pulling images...
   ✓ caddy:2-alpine
-  ✓ dbgate/web:latest
-  ✓ dbgate/mcp-server:latest
+  ✓ askdb/web:latest
+  ✓ askdb/mcp-server:latest
   ✓ postgres:16-alpine
 
-Starting dbgate...
+Starting askdb...
   ✓ All services started
 
   ┌──────────────────────────────────────────────┐
   │                                              │
-  │  dbgate is running!                          │
+  │  askdb is running!                          │
   │                                              │
   │  Open: http://203.0.113.42                   │
   │                                              │
@@ -60,10 +60,10 @@ Starting dbgate...
 root@vps:~# docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 
 NAMES              IMAGE                      STATUS
-dbgate-caddy-1     caddy:2-alpine            Up 30 seconds
-dbgate-web-1       dbgate/web:latest         Up 28 seconds
-dbgate-mcp-server  dbgate/mcp-server:latest  Up 28 seconds
-dbgate-app-db-1    postgres:16-alpine        Up 30 seconds
+askdb-caddy-1     caddy:2-alpine            Up 30 seconds
+askdb-web-1       askdb/web:latest         Up 28 seconds
+askdb-mcp-server  askdb/mcp-server:latest  Up 28 seconds
+askdb-app-db-1    postgres:16-alpine        Up 30 seconds
 ```
 
 4 containers. No Node.js on the host. No npm. Just Docker.
@@ -82,10 +82,10 @@ CTO opens `http://203.0.113.42`:
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │                        ┌─────────────────────┐                      │
-│                        │     dbgate           │                      │
+│                        │     askdb           │                      │
 │                        └─────────────────────┘                      │
 │                                                                     │
-│                   Welcome to dbgate                                 │
+│                   Welcome to askdb                                 │
 │                                                                     │
 │           Create your admin account to get started.                 │
 │                                                                     │
@@ -120,7 +120,7 @@ CTO opens `http://203.0.113.42`:
 │  ○ ○ ○  http://203.0.113.42/dashboard                              │
 ├──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  Dashboard                          sarah@acmec... ▼    │
+│ askdb   │  Dashboard                          sarah@acmec... ▼    │
 │          │                                                          │
 │ ─────    │  ┌───────────────────────────────────────────────────┐   │
 │          │  │                                                   │   │
@@ -149,7 +149,7 @@ CTO opens `http://203.0.113.42`:
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  Connect Database          Step 1 of 4                  │
+│ askdb   │  Connect Database          Step 1 of 4                  │
 │          │                                                          │
 │          │  Select your database type:                              │
 │          │                                                          │
@@ -169,7 +169,7 @@ CTO opens `http://203.0.113.42`:
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  Connect Database          Step 2 of 4                  │
+│ askdb   │  Connect Database          Step 2 of 4                  │
 │          │                                                          │
 │          │  Paste your MongoDB connection string:                   │
 │          │                                                          │
@@ -202,7 +202,7 @@ CTO opens `http://203.0.113.42`:
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  Connect Database          Step 3 of 4                  │
+│ askdb   │  Connect Database          Step 3 of 4                  │
 │          │                                                          │
 │          │  Creating your sandbox...                                │
 │          │                                                          │
@@ -223,7 +223,7 @@ CTO opens `http://203.0.113.42`:
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  Connect Database          Step 3 of 4                  │
+│ askdb   │  Connect Database          Step 3 of 4                  │
 │          │                                                          │
 │          │  ✓ Sandbox created. Choose which fields AI can see:      │
 │          │                                                          │
@@ -272,7 +272,7 @@ CTO opens `http://203.0.113.42`:
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  Connect Database          Step 4 of 4  ✓               │
+│ askdb   │  Connect Database          Step 4 of 4  ✓               │
 │          │                                                          │
 │          │  ┌───────────────────────────────────────────────────┐   │
 │          │  │  ✅ acme-production is ready!                     │   │
@@ -286,7 +286,7 @@ CTO opens `http://203.0.113.42`:
 │          │                                                          │
 │          │  Your API Key:                                           │
 │          │  ┌────────────────────────────────────────────┬──────┐   │
-│          │  │ dbg_sk_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6   │ Copy │   │
+│          │  │ ask_sk_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6   │ Copy │   │
 │          │  └────────────────────────────────────────────┴──────┘   │
 │          │  ⚠ Save this key now. It won't be shown again.          │
 │          │                                                          │
@@ -305,7 +305,7 @@ CTO opens `http://203.0.113.42`:
 │          │  │       "type": "url",                              │   │
 │          │  │       "url": "http://203.0.113.42/mcp",          │   │
 │          │  │       "headers": {                                │   │
-│          │  │         "Authorization": "Bearer dbg_sk_a1b2..."  │   │
+│          │  │         "Authorization": "Bearer ask_sk_a1b2..."  │   │
 │          │  │       }                                           │   │
 │          │  │     }                                             │   │
 │          │  │   }                                               │   │
@@ -392,7 +392,7 @@ When Claude runs a query, even `SELECT *` or `find({})`, those fields are stripp
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  Team                                                    │
+│ askdb   │  Team                                                    │
 │          │                                                          │
 │          │  Members                                                 │
 │          │  ┌───────────────────────────────────────────────────┐   │
@@ -414,12 +414,12 @@ When Claude runs a query, even `SELECT *` or `find({})`, those fields are stripp
 ### Scene 5.2 — Mike receives email, sets up account
 
 ```
-From: dbgate <noreply@203.0.113.42>
+From: askdb <noreply@203.0.113.42>
 To: mike@acmecorp.com
 Subject: Sarah gave you access to company data in Claude
 
 Sarah (sarah@acmecorp.com) has given you access to Acme Corp's
-company data through dbgate.
+company data through askdb.
 
 You can now ask questions about company data directly in Claude,
 ChatGPT, or Cursor — no SQL required.
@@ -464,7 +464,7 @@ Mike clicks the link, creates a password, and sees his personal MCP URL + API ke
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  Audit Log                       Filter ▼  Export CSV   │
+│ askdb   │  Audit Log                       Filter ▼  Export CSV   │
 │          │                                                          │
 │          │  ┌────────────────────────────────────────────────────┐  │
 │          │  │ Time       User     Action    Collections   Rows ms│  │
@@ -491,7 +491,7 @@ Every query is logged — who asked, what tool was called, which collections wer
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  Settings → Domain                                       │
+│ askdb   │  Settings → Domain                                       │
 │          │                                                          │
 │          │  Current: http://203.0.113.42                             │
 │          │                                                          │
@@ -521,13 +521,13 @@ A week later, Sarah wants fresh data. She clicks "Sync Now" on the connection pa
 ```
 ┌──────────┬──────────────────────────────────────────────────────────┤
 │          │                                                          │
-│ dbgate   │  acme-production                                         │
+│ askdb   │  acme-production                                         │
 │          │                                                          │
 │          │  Status: 🟢 Healthy                                      │
 │          │  Type: MongoDB · 14 collections · 52K docs               │
 │          │  Last synced: 7 days ago                                 │
 │          │  Sync schedule: [Manual ▼]                                │
-│          │  Sandbox: dbgate-sandbox-acme-prod (mongo:7)              │
+│          │  Sandbox: askdb-sandbox-acme-prod (mongo:7)              │
 │          │                                                          │
 │          │  ┌───────────────┐  ┌───────────────┐                    │
 │          │  │  Sync Now     │  │  View Schema  │                    │

@@ -1,10 +1,10 @@
-# dbgate - Product Specification Summary
+# askdb - Product Specification Summary
 
-> **One-liner:** Connect your database to any AI agent in 5 minutes. Data stays protected, team stays in control.
+> **One-liner:** Ask your database anything. Data stays protected, team stays in control.
 
 ## What It Is
 
-dbgate is an **open-source, database-agnostic orchestration layer** that bridges company databases and AI agents (Claude, ChatGPT, Cursor, etc.). It supports **PostgreSQL, MongoDB, and MySQL** from day one.
+askdb is an **open-source, database-agnostic orchestration layer** that bridges company databases and AI agents (Claude, ChatGPT, Cursor, etc.). It supports **PostgreSQL, MongoDB, and MySQL** from day one.
 
 - **Docker sandbox containers** — dump/restore from prod into isolated Docker containers. AI never touches prod.
 - **Dynamic field filtering** — CTO sees real sample data, toggles fields/tables visible or hidden. Hidden fields are stripped from MCP responses at query time. No fake data, no masking engine — just omit what shouldn't be seen.
@@ -28,7 +28,7 @@ CTO connects their production database once, configures what data AI agents can 
 
 **Core flow:**
 ```
-CTO pastes DB URL → dbgate clones to sandbox → CTO sees real sample rows
+CTO pastes DB URL → askdb clones to sandbox → CTO sees real sample rows
 → CTO toggles which fields/tables to hide → saves config → invites team
 → each member gets MCP URL → pastes into Claude → done
 ```
@@ -36,11 +36,11 @@ CTO pastes DB URL → dbgate clones to sandbox → CTO sees real sample rows
 **Key principles:**
 - **Database-agnostic** — works with Postgres, MongoDB, MySQL (and extensible to more)
 - **Two simple policies** — visible (AI sees real data) or hidden (field stripped entirely)
-- Zero data on dbgate servers (sandbox lives in Docker containers alongside the app)
+- Zero data on askdb servers (sandbox lives in Docker containers alongside the app)
 - Only stores: configs, user accounts, API keys, audit logs
 - One MCP server works across all AI platforms
 - Non-technical setup (no CLI, no YAML, no SQL required for end users)
-- **One-command self-hosted install** — `curl -sSL https://get.dbgate.dev | bash`
+- **One-command self-hosted install** — `curl -sSL https://get.askdb.dev | bash`
 - **Configurable sync schedule** — manual, every 6h, 12h, daily, or weekly
 
 ---
@@ -179,7 +179,7 @@ Each supported database implements a common interface:
 | Reverse proxy | Caddy (auto-SSL) | Included |
 | **Total** | **Just a VPS with Docker** | **$5-20/mo VPS** |
 
-### Cloud (dbgate.dev)
+### Cloud (askdb.dev)
 | Service | Purpose | Cost |
 |---------|---------|------|
 | Docker sandbox instances | Per-customer sandbox DBs | ~$5-8/mo per customer |
@@ -208,7 +208,7 @@ Each supported database implements a common interface:
 CTO selects DB type, pastes connection string, validates (read-only test).
 
 ### Step 2: Sandbox created
-dbgate spins up a Docker container, runs dump/restore. CTO sees a progress bar.
+askdb spins up a Docker container, runs dump/restore. CTO sees a progress bar.
 
 ### Step 3: Schema browser with sample data
 **This is the key screen.** CTO sees every table/collection with a sample of the latest row from each, and toggles visibility per field and per table.
@@ -280,7 +280,7 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 ## MCP Server Spec
 
 ### Endpoint
-- Cloud: `https://{org-slug}.dbgate.dev/mcp`
+- Cloud: `https://{org-slug}.askdb.dev/mcp`
 - Self-hosted: `http://<VPS_IP>/mcp` (or `https://your-domain.com/mcp` after adding custom domain)
 - Auth: Bearer token (per-user API key)
 
@@ -401,7 +401,7 @@ The AI agent learns which format to use from the `db_type` field returned by `li
 | `/docs` | Public documentation |
 
 ### Key UI Components
-- **First-Run Setup Page** (self-hosted only) — "Welcome to dbgate" → create admin account → redirects to dashboard.
+- **First-Run Setup Page** (self-hosted only) — "Welcome to askdb" → create admin account → redirects to dashboard.
 - **Connection Wizard** — Select DB type → paste connection string → validate → create Docker sandbox → schema browser with sample data and visibility toggles → deploy MCP endpoint
 - **Schema Browser** — Table showing each field with its type, **sample value from the latest row** (real data), and a **visible/hidden toggle**. PII fields auto-detected and pre-set to hidden. Sync schedule dropdown. Changes take effect immediately (no re-sync needed).
 - **Domain Settings** (self-hosted) — Enter custom domain, auto-SSL via Caddy/Let's Encrypt.
@@ -414,7 +414,7 @@ The AI agent learns which format to use from the `db_type` field returned by `li
 
 ### Authentication (two modes)
 
-| | Self-Hosted | Cloud (dbgate.dev) |
+| | Self-Hosted | Cloud (askdb.dev) |
 |---|---|---|
 | **Provider** | Built-in (email + password) | Clerk (OAuth with GitHub, Google, email) |
 | **First run** | `/setup` page creates admin account | Standard Clerk signup |
@@ -439,9 +439,9 @@ The AI agent learns which format to use from the `db_type` field returned by `li
 
 ### API Key Format
 ```
-dbg_sk_{random_32_chars}
+ask_sk_{random_32_chars}
 ```
-- Prefix stored in DB for display: `dbg_sk_a1b2...`
+- Prefix stored in DB for display: `ask_sk_a1b2...`
 - Full key hashed with bcrypt and stored
 - Key shown once on creation, never again
 
@@ -450,7 +450,7 @@ dbg_sk_{random_32_chars}
 ## Repo Structure (Turborepo monorepo)
 
 ```
-dbgate/
+askdb/
   apps/web/                 # Next.js 15 dashboard
     app/
       setup/                # First-run admin account creation (self-hosted)
@@ -516,7 +516,7 @@ dbgate/
 - Connection string encryption
 
 ### Phase 2: Dashboard + Installer (Weeks 3-5)
-- **Coolify-style bash installer** (`curl -sSL https://get.dbgate.dev | bash`)
+- **Coolify-style bash installer** (`curl -sSL https://get.askdb.dev | bash`)
 - **First-run setup page** (create admin account on first visit)
 - **Built-in auth** for self-hosted (email/password, bcrypt + JWT)
 - Clerk auth for cloud version
@@ -535,7 +535,7 @@ dbgate/
 - README for GitHub repo
 - Basic rate limiting on MCP server
 - Example configs in /examples
-- Publish `dbgate` npm package
+- Publish `askdb` npm package
 
 ### Post-MVP Backlog
 - Additional DB adapters (Redis, ClickHouse, DynamoDB, etc.)
@@ -555,7 +555,7 @@ dbgate/
 ## Sync & Refresh
 
 ### How Sync Works
-1. dbgate connects to prod (read-only)
+1. askdb connects to prod (read-only)
 2. Runs dump tool (pg_dump / mongodump / mysqldump)
 3. Restores into the existing sandbox Docker container (replaces old data)
 4. MCP server continues serving during sync (queries hit old data until restore completes, then switches)
@@ -581,7 +581,7 @@ Everything in the repo: core engine, MCP server, A2A server, dashboard UI, Docke
 
 Self-hosted users just need **a VPS with Docker**. One command installs everything. All sandbox databases, the MCP server, and the dashboard run as Docker containers on the same machine.
 
-### Cloud (dbgate.dev)
+### Cloud (askdb.dev)
 Managed version: sandbox provisioning (all DB types), MCP server hosting (per-org), backups, monitoring, uptime.
 
 ---
@@ -593,7 +593,7 @@ Like Coolify, Plausible, or Gitea — one command on a VPS, then everything is c
 
 ### One-Command Install
 ```bash
-curl -sSL https://get.dbgate.dev | bash
+curl -sSL https://get.askdb.dev | bash
 ```
 
 ### The Actual Script (`scripts/install.sh`)
@@ -605,12 +605,12 @@ set -e
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 
-INSTALL_DIR="/opt/dbgate"
-DBGATE_VERSION="${DBGATE_VERSION:-latest}"
+INSTALL_DIR="/opt/askdb"
+ASKDB_VERSION="${ASKDB_VERSION:-latest}"
 
 echo -e "\n${CYAN}${BOLD}"
 echo "  ┌─────────────────────────────────────┐"
-echo "  │   dbgate — Self-Hosted Installer    │"
+echo "  │   askdb — Self-Hosted Installer    │"
 echo "  └─────────────────────────────────────┘"
 echo -e "${NC}"
 
@@ -652,7 +652,7 @@ DB_PASSWORD=$DB_PASSWORD
 AUTH_MODE=builtin
 APP_URL=http://$PUBLIC_IP
 DOCKER_SOCKET=/var/run/docker.sock
-DBGATE_VERSION=$DBGATE_VERSION
+ASKDB_VERSION=$ASKDB_VERSION
 EOF
 
 # ── Write docker-compose.yml ──
@@ -665,10 +665,10 @@ services:
     volumes: [./Caddyfile:/etc/caddy/Caddyfile, caddy-data:/data]
     depends_on: [web, mcp-server]
   web:
-    image: dbgate/web:${DBGATE_VERSION:-latest}
+    image: askdb/web:${ASKDB_VERSION:-latest}
     restart: unless-stopped
     environment:
-      - DATABASE_URL=postgres://dbgate:${DB_PASSWORD}@app-db:5432/dbgate
+      - DATABASE_URL=postgres://askdb:${DB_PASSWORD}@app-db:5432/askdb
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - AUTH_MODE=${AUTH_MODE:-builtin}
@@ -679,20 +679,20 @@ services:
     depends_on:
       app-db: { condition: service_healthy }
   mcp-server:
-    image: dbgate/mcp-server:${DBGATE_VERSION:-latest}
+    image: askdb/mcp-server:${ASKDB_VERSION:-latest}
     restart: unless-stopped
     environment:
-      - DATABASE_URL=postgres://dbgate:${DB_PASSWORD}@app-db:5432/dbgate
+      - DATABASE_URL=postgres://askdb:${DB_PASSWORD}@app-db:5432/askdb
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     depends_on:
       app-db: { condition: service_healthy }
   app-db:
     image: postgres:16-alpine
     restart: unless-stopped
-    environment: { POSTGRES_DB: dbgate, POSTGRES_USER: dbgate, POSTGRES_PASSWORD: "${DB_PASSWORD}" }
+    environment: { POSTGRES_DB: askdb, POSTGRES_USER: askdb, POSTGRES_PASSWORD: "${DB_PASSWORD}" }
     volumes: [app-db-data:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dbgate"]
+      test: ["CMD-SHELL", "pg_isready -U askdb"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -700,7 +700,7 @@ volumes:
   caddy-data:
   app-db-data:
 networks:
-  default: { name: dbgate }
+  default: { name: askdb }
 COMPOSE
 
 # ── Write Caddyfile ──
@@ -714,13 +714,13 @@ CADDY
 # ── Pull and start ──
 echo -e "\n${BOLD}Pulling images...${NC}"
 docker compose pull
-echo -e "\n${BOLD}Starting dbgate...${NC}"
+echo -e "\n${BOLD}Starting askdb...${NC}"
 docker compose up -d --wait
 echo -e "  ${GREEN}✓${NC} All services started"
 
 echo -e "\n${CYAN}${BOLD}"
 echo "  ┌──────────────────────────────────────────────┐"
-echo "  │  dbgate is running!                          │"
+echo "  │  askdb is running!                          │"
 echo "  │  Open: http://$PUBLIC_IP                     │"
 echo "  │  Create your admin account to get started.   │"
 echo "  └──────────────────────────────────────────────┘"
@@ -738,8 +738,8 @@ $ docker ps
 
 CONTAINER ID  IMAGE                      STATUS   PORTS
 a1b2c3d4e5f6  caddy:2-alpine            Up       0.0.0.0:80->80, 0.0.0.0:443->443
-f6g7h8i9j0k1  dbgate/web:latest         Up       3000/tcp
-l2m3n4o5p6q7  dbgate/mcp-server:latest  Up       3100/tcp
+f6g7h8i9j0k1  askdb/web:latest         Up       3000/tcp
+l2m3n4o5p6q7  askdb/mcp-server:latest  Up       3100/tcp
 x4y5z6a7b8c9  postgres:16-alpine        Up       5432/tcp
 
 # After user connects a MongoDB database via dashboard:
@@ -755,7 +755,7 @@ d0e1f2g3h4i5  mongo:7                   Up       27017/tcp  (sandbox)
 ```
 User clicks "Connect MongoDB" in dashboard
   → web app validates connection string (read-only test against prod)
-  → web app calls Docker API: create container (mongo:7) on dbgate network
+  → web app calls Docker API: create container (mongo:7) on askdb network
   → web app runs mongodump from prod → mongorestore into sandbox container
   → sandbox ready, MCP server can query it
 ```
@@ -786,13 +786,13 @@ User clicks "Connect MongoDB" in dashboard
 
 ## Competitors
 
-| Competitor | Gap | dbgate Advantage |
+| Competitor | Gap | askdb Advantage |
 |---|---|---|
 | **Ardent** | CLI-only, no field filtering, no AI integration, hosts user data | Field-level control, MCP native, UI, open source, no data hosting |
 | **Google MCP Toolbox** | Connects AI directly to prod, no sandbox/filtering, developer-only | Sandbox + field filtering + UI, non-technical setup |
 | **Metabase/Looker** | Weeks to setup, not agent-compatible, needs data team | Works inside AI tools people already use, 5 min setup |
-| **Paperclip** | No database access layer | Complementary — dbgate is a skill/plugin for Paperclip agents |
-| **Hermes Agent** | No built-in safe database access | Complementary — dbgate is a skill/plugin/MCP server for Hermes |
+| **Paperclip** | No database access layer | Complementary — askdb is a skill/plugin for Paperclip agents |
+| **Hermes Agent** | No built-in safe database access | Complementary — askdb is a skill/plugin/MCP server for Hermes |
 
 ---
 
@@ -847,7 +847,7 @@ These must ALWAYS hold true:
 
 ```bash
 # ── Core (both self-hosted and cloud) ──
-DATABASE_URL=postgres://dbgate:pass@app-db:5432/dbgate  # dbgate's own metadata store
+DATABASE_URL=postgres://askdb:pass@app-db:5432/askdb  # askdb's own metadata store
 ENCRYPTION_KEY=...                       # 256-bit key (auto-generated by installer)
 JWT_SECRET=...                           # JWT signing key (auto-generated by installer)
 
@@ -867,7 +867,7 @@ MCP_SERVER_HOST=0.0.0.0
 DOCKER_SOCKET=/var/run/docker.sock       # For dynamic sandbox container creation
 
 # ── Domain (self-hosted, set via dashboard settings) ──
-CUSTOM_DOMAIN=                           # e.g., dbgate.mycompany.com (blank = use IP)
+CUSTOM_DOMAIN=                           # e.g., askdb.mycompany.com (blank = use IP)
 APP_URL=http://203.0.113.42              # Auto-detected by installer, updated when domain is set
 
 # ── Stripe (cloud only) ──
