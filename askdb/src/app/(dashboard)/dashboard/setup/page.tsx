@@ -73,7 +73,7 @@ export default function McpSetupPage() {
         {
           mcpServers: {
             askdb: {
-              type: "streamable-http",
+              type: "http",
               url: mcpUrl,
               headers: {
                 Authorization: `Bearer ${keyPlaceholder}`,
@@ -90,7 +90,7 @@ export default function McpSetupPage() {
       config: JSON.stringify(
         {
           askdb: {
-            type: "streamable-http",
+            type: "http",
             url: mcpUrl,
             headers: {
               Authorization: `Bearer ${keyPlaceholder}`,

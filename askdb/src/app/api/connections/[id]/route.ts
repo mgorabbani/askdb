@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { connections } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { and, eq } from "drizzle-orm";
+import { sandboxManager } from "@/lib/docker/manager";
 
 export async function GET(
   _req: Request,
@@ -46,6 +47,13 @@ export async function DELETE(
     .where(and(eq(connections.id, id), eq(connections.userId, session.user.id)));
 
   if (!conn) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Clean up Docker sandbox container and volume
+  try {
+    await sandboxManager.destroy(id, true);
+  } catch {
+    // Container may already be gone — continue with DB cleanup
+  }
 
   await db.delete(connections).where(eq(connections.id, id));
   return NextResponse.json({ ok: true });

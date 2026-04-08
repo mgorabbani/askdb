@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Database, Plus, Clock } from "lucide-react";
+import { DeleteConnectionButton } from "@/components/delete-connection-button";
 
 export default async function DashboardPage() {
   const session = await getSession();
@@ -54,7 +55,13 @@ export default async function DashboardPage() {
               <Card className="transition-colors hover:border-primary/50">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">{conn.name}</CardTitle>
-                  <SyncBadge status={conn.syncStatus} />
+                  <div className="flex items-center gap-2">
+                    <SyncBadge status={conn.syncStatus} />
+                    <DeleteConnectionButton
+                      connectionId={conn.id}
+                      connectionName={conn.name}
+                    />
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
