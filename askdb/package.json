@@ -9,6 +9,7 @@
     "start": "next start",
     "start:mcp": "NODE_ENV=production tsx src/mcp/server.ts",
     "lint": "eslint",
+    "test": "node --import tsx --test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",

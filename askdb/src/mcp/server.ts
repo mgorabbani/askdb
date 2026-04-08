@@ -8,7 +8,7 @@
 import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
-import { createHash, createDecipheriv } from "crypto";
+import { createHash } from "crypto";
 import { existsSync } from "fs";
 import path from "path";
 
@@ -17,7 +17,7 @@ const MONGO_HOST = existsSync("/.dockerenv") ? "host.docker.internal" : "localho
 import express from "express";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { eq, and, isNull, inArray } from "drizzle-orm";
+import { eq, and, isNull, inArray, desc } from "drizzle-orm";
 import { MongoClient, type Db as MongoDb } from "mongodb";
 import { z } from "zod";
 
@@ -27,14 +27,30 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 // ── Re-import schema (can't use @/ alias in standalone tsx) ─────────
 import {
+  agentInsights,
   apiKeys,
   connections,
   schemaTables,
   schemaColumns,
-  schemaRelationships,
   queryMemories,
   auditLogs,
 } from "../lib/db/schema.js";
+import { ensureDatabaseSchema } from "../lib/db/bootstrap.js";
+import {
+  generateCollectionDetailMarkdown,
+  generateGuideMarkdown,
+  generateSchemaOverviewMarkdown,
+  invalidateGuideCache,
+} from "../lib/schema-summary/generator.js";
+import { saveAgentInsight } from "../lib/memory/insights.js";
+import {
+  buildConfigResourcePayload,
+  buildDebugResourcePayload,
+  buildInitializeInstructions,
+  buildInsightsResourceMarkdown,
+  isToolEnabled,
+  readServerControls,
+} from "./patterns.js";
 
 // ── Own DB connection (standalone process) ──────────────────────────
 const dbPath =
@@ -43,32 +59,13 @@ const dbPath =
 
 const sqlite = new Database(dbPath);
 sqlite.pragma("journal_mode = WAL");
+ensureDatabaseSchema(sqlite);
 const db = drizzle(sqlite);
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function hashKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
-}
-
-function decrypt(encoded: string): string {
-  const hex = process.env.ENCRYPTION_KEY;
-  if (!hex || hex.length !== 64) {
-    throw new Error("ENCRYPTION_KEY must be a 64-char hex string (32 bytes)");
-  }
-  const encKey = Buffer.from(hex, "hex");
-  const [ivHex, authTagHex, ciphertextHex] = encoded.split(":");
-  if (!ivHex || !authTagHex || !ciphertextHex) {
-    throw new Error("Invalid encrypted format");
-  }
-  const iv = Buffer.from(ivHex, "hex");
-  const authTag = Buffer.from(authTagHex, "hex");
-  const ciphertext = Buffer.from(ciphertextHex, "hex");
-  const decipher = createDecipheriv("aes-256-gcm", encKey, iv);
-  decipher.setAuthTag(authTag);
-  let decrypted = decipher.update(ciphertext);
-  decrypted = Buffer.concat([decrypted, decipher.final()]);
-  return decrypted.toString("utf8");
 }
 
 // ── Auth: resolve bearer token → userId + apiKeyId + connectionId ───
@@ -140,19 +137,6 @@ async function getMongoDb(port: number): Promise<MongoDb> {
 
 // ── Schema helpers ──────────────────────────────────────────────────
 
-function getVisibleTables(connectionId: string) {
-  return db
-    .select()
-    .from(schemaTables)
-    .where(
-      and(
-        eq(schemaTables.connectionId, connectionId),
-        eq(schemaTables.isVisible, true)
-      )
-    )
-    .all();
-}
-
 function getHiddenTableNames(connectionId: string): Set<string> {
   const rows = db
     .select({ name: schemaTables.name })
@@ -167,14 +151,18 @@ function getHiddenTableNames(connectionId: string): Set<string> {
   return new Set(rows.map((r) => r.name));
 }
 
-function getVisibleColumns(tableId: string) {
+function getAccessibleTable(connectionId: string, collectionName: string) {
   return db
     .select()
-    .from(schemaColumns)
+    .from(schemaTables)
     .where(
-      and(eq(schemaColumns.tableId, tableId), eq(schemaColumns.isVisible, true))
+      and(
+        eq(schemaTables.connectionId, connectionId),
+        eq(schemaTables.name, collectionName),
+        eq(schemaTables.isVisible, true)
+      )
     )
-    .all();
+    .get();
 }
 
 function getHiddenFieldNames(connectionId: string): Set<string> {
@@ -335,93 +323,9 @@ function recordQueryPattern(connectionId: string, queryStr: string) {
   }
 }
 
-// ── Schema summary generator ────────────────────────────────────────
-
-function generateSchemaMarkdown(connectionId: string): string {
-  const tables = db.select().from(schemaTables)
-    .where(eq(schemaTables.connectionId, connectionId)).all();
-
-  const lines: string[] = ["# Database Schema\n"];
-
-  const visible = tables.filter((t) => t.isVisible);
-  const hiddenCount = tables.length - visible.length;
-
-  for (const table of visible) {
-    const columns = db.select().from(schemaColumns)
-      .where(eq(schemaColumns.tableId, table.id)).all();
-
-    const visibleFields = columns.filter((c) => c.isVisible);
-    if (visibleFields.length === 0) continue;
-
-    lines.push(`## ${table.name} (${table.docCount.toLocaleString()} documents)\n`);
-    if (table.description) lines.push(`${table.description}\n`);
-
-    lines.push("### Fields\n");
-    lines.push("| Field | Type | Sample |");
-    lines.push("|-------|------|--------|");
-    for (const f of visibleFields) {
-      const sample = f.sampleValue ? (f.sampleValue.length > 50 ? f.sampleValue.slice(0, 50) + "…" : f.sampleValue) : "—";
-      lines.push(`| ${f.name} | ${f.fieldType} | ${sample} |`);
-    }
-    lines.push("");
-
-    const hiddenFields = columns.filter((c) => !c.isVisible);
-    if (hiddenFields.length > 0) {
-      lines.push(`*${hiddenFields.length} field(s) hidden for privacy*\n`);
-    }
-
-    // Outgoing relationships
-    const rels = db.select().from(schemaRelationships)
-      .where(eq(schemaRelationships.sourceTableId, table.id)).all();
-
-    if (rels.length > 0) {
-      lines.push("### Relationships\n");
-      for (const rel of rels) {
-        const target = tables.find((t) => t.id === rel.targetTableId);
-        if (target) {
-          const arrow = rel.relationType === "belongsTo" ? "→" : "→→";
-          lines.push(`- \`${rel.sourceField}\` ${arrow} **${target.name}** (${rel.relationType})`);
-        }
-      }
-      lines.push("");
-    }
-
-    // Incoming references
-    const incoming = db.select().from(schemaRelationships)
-      .where(eq(schemaRelationships.targetTableId, table.id)).all();
-
-    if (incoming.length > 0) {
-      lines.push("### Referenced By\n");
-      for (const ref of incoming) {
-        const source = tables.find((t) => t.id === ref.sourceTableId);
-        if (source) lines.push(`- **${source.name}**.${ref.sourceField}`);
-      }
-      lines.push("");
-    }
-
-    lines.push("---\n");
-  }
-
-  if (hiddenCount > 0) lines.push(`*${hiddenCount} collection(s) hidden for privacy*\n`);
-
-  // Query memories
-  const memories = db.select().from(queryMemories)
-    .where(eq(queryMemories.connectionId, connectionId))
-    .all()
-    .sort((a, b) => b.frequency - a.frequency)
-    .slice(0, 20);
-
-  if (memories.length > 0) {
-    lines.push("## Common Query Patterns\n");
-    for (const m of memories) {
-      lines.push(`- **${m.pattern}** (used ${m.frequency}x)`);
-      lines.push(`  ${m.description}`);
-      if (m.exampleQuery) lines.push(`  \`${m.exampleQuery}\``);
-    }
-    lines.push("");
-  }
-
-  return lines.join("\n");
+function normalizeOptionalString(value: string | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
 }
 
 // ── Allowed operations & forbidden stages ───────────────────────────
@@ -438,187 +342,104 @@ const FORBIDDEN_STAGES = new Set([
 // ── Build MCP server ────────────────────────────────────────────────
 
 function createMcpServer(auth: AuthContext): McpServer {
+  const controls = readServerControls();
+  const topInsights = db
+    .select({
+      category: agentInsights.category,
+      collection: agentInsights.collection,
+      insight: agentInsights.insight,
+    })
+    .from(agentInsights)
+    .where(eq(agentInsights.connectionId, auth.connectionId))
+    .orderBy(desc(agentInsights.useCount), desc(agentInsights.lastConfirmedAt))
+    .all()
+    .slice(0, 12);
+
   const server = new McpServer(
-    { name: "askdb", version: "0.1.0" },
-    { capabilities: { tools: {} } }
+    { name: "askdb", version: "0.2.0" },
+    {
+      capabilities: { tools: {}, resources: {} },
+      instructions: buildInitializeInstructions(topInsights),
+    }
   );
+  const resourceUris = [
+    "guide://usage",
+    "schema://overview",
+    "insights://global",
+    "config://config",
+    "debug://askdb",
+  ];
+  const toolNames: string[] = [];
+  const debugState = {
+    lastError: null as string | null,
+    lastErrorAt: null as string | null,
+    lastSuccessAt: null as string | null,
+    lastTool: null as string | null,
+  };
 
-  // ── list_tables ─────────────────────────────────────────────────
-  server.registerTool("list_tables", {
-    description:
-      "List all visible MongoDB collections with their document counts.",
-    inputSchema: {},
-  }, async () => {
-    const start = Date.now();
-    const tables = getVisibleTables(auth.connectionId);
+  function rememberError(toolName: string, message: string) {
+    debugState.lastTool = toolName;
+    debugState.lastError = message;
+    debugState.lastErrorAt = new Date().toISOString();
+  }
 
-    // Filter to only tables that have at least one visible column
-    const result: { name: string; docCount: number }[] = [];
-    for (const t of tables) {
-      const visCols = getVisibleColumns(t.id);
-      if (visCols.length > 0) {
-        result.push({ name: t.name, docCount: t.docCount });
-      }
-    }
+  function rememberSuccess(toolName: string) {
+    debugState.lastTool = toolName;
+    debugState.lastSuccessAt = new Date().toISOString();
+  }
 
-    writeAuditLog("list_tables", auth.connectionId, auth.apiKeyId, {
-      executionMs: Date.now() - start,
-      docCount: result.length,
-    });
-
+  function toolError(toolName: string, message: string) {
+    rememberError(toolName, message);
     return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(result, null, 2),
-        },
-      ],
+      content: [{ type: "text" as const, text: message }],
+      isError: true,
     };
-  });
+  }
 
-  // ── describe_table ──────────────────────────────────────────────
-  server.registerTool("describe_table", {
-    description:
-      "Describe the visible fields of a MongoDB collection (name, type, sample value).",
-    inputSchema: {
-      table_name: z.string().describe("The collection name to describe"),
-    },
-  }, async ({ table_name }) => {
-    const start = Date.now();
-
-    const hiddenTables = getHiddenTableNames(auth.connectionId);
-    if (hiddenTables.has(table_name)) {
-      return {
-        content: [{ type: "text" as const, text: `Collection "${table_name}" not found or is hidden.` }],
-        isError: true,
-      };
-    }
-
-    const table = db
-      .select()
-      .from(schemaTables)
-      .where(
-        and(
-          eq(schemaTables.connectionId, auth.connectionId),
-          eq(schemaTables.name, table_name),
-          eq(schemaTables.isVisible, true)
-        )
-      )
-      .get();
-
-    if (!table) {
-      return {
-        content: [{ type: "text" as const, text: `Collection "${table_name}" not found.` }],
-        isError: true,
-      };
-    }
-
-    const cols = getVisibleColumns(table.id);
-    const fields = cols.map((c) => ({
-      name: c.name,
-      type: c.fieldType,
-      sampleValue: c.sampleValue,
-    }));
-
-    writeAuditLog("describe_table", auth.connectionId, auth.apiKeyId, {
-      collection: table_name,
-      executionMs: Date.now() - start,
-      docCount: fields.length,
-    });
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(fields, null, 2),
-        },
-      ],
-    };
-  });
-
-  // ── query ───────────────────────────────────────────────────────
-  server.registerTool("query", {
-    description:
-      "Execute a read-only MongoDB query. JSON format: {collection, operation, filter?, pipeline?, field?, limit?}. Allowed operations: find, aggregate, count, distinct.",
-    inputSchema: {
-      query: z
-        .string()
-        .describe(
-          'JSON query object, e.g. {"collection":"users","operation":"find","filter":{"status":"active"}}'
-        ),
-    },
-  }, async ({ query: queryStr }) => {
-    const start = Date.now();
-    let parsed: {
+  async function executeQueryOperation(
+    toolName: string,
+    parsed: {
       collection: string;
       operation: string;
       filter?: Record<string, unknown>;
       pipeline?: Record<string, unknown>[];
       field?: string;
       limit?: number;
-    };
-
-    try {
-      parsed = JSON.parse(queryStr);
-    } catch {
-      return {
-        content: [{ type: "text" as const, text: "Invalid JSON in query parameter." }],
-        isError: true,
-      };
-    }
-
+    },
+    queryStr = JSON.stringify(parsed)
+  ) {
+    const start = Date.now();
     const { collection, operation, filter, pipeline, field, limit } = parsed;
 
-    // Validate operation
     if (!ALLOWED_OPS.has(operation)) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Operation "${operation}" is not allowed. Allowed: ${[...ALLOWED_OPS].join(", ")}`,
-          },
-        ],
-        isError: true,
-      };
+      return toolError(
+        toolName,
+        `Operation "${operation}" is not allowed. Allowed: ${[...ALLOWED_OPS].join(", ")}`
+      );
     }
 
-    // Reject hidden collections
     const hiddenTables = getHiddenTableNames(auth.connectionId);
     if (hiddenTables.has(collection)) {
-      return {
-        content: [{ type: "text" as const, text: `Collection "${collection}" is not accessible.` }],
-        isError: true,
-      };
+      return toolError(toolName, `Collection "${collection}" is not accessible.`);
     }
 
-    // Validate aggregation pipeline
+    if (!getAccessibleTable(auth.connectionId, collection)) {
+      return toolError(toolName, `Collection "${collection}" not found.`);
+    }
+
     if (operation === "aggregate" && pipeline) {
       for (const stage of pipeline) {
         const stageKey = Object.keys(stage)[0];
         if (FORBIDDEN_STAGES.has(stageKey)) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Aggregation stage "${stageKey}" is forbidden.`,
-              },
-            ],
-            isError: true,
-          };
+          return toolError(toolName, `Aggregation stage "${stageKey}" is forbidden.`);
         }
-        // Check $lookup references to hidden collections
         if (stageKey === "$lookup") {
-          const lookup = stage["$lookup"] as Record<string, unknown>;
+          const lookup = stage.$lookup as Record<string, unknown>;
           if (lookup.from && hiddenTables.has(lookup.from as string)) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `$lookup references hidden collection "${lookup.from}".`,
-                },
-              ],
-              isError: true,
-            };
+            return toolError(
+              toolName,
+              `$lookup references hidden collection "${lookup.from}".`
+            );
           }
         }
       }
@@ -653,13 +474,14 @@ function createMcpServer(auth: AuthContext): McpServer {
             maxTimeMS: 10_000,
           });
           const elapsed = Date.now() - start;
-          writeAuditLog("query", auth.connectionId, auth.apiKeyId, {
+          writeAuditLog(toolName, auth.connectionId, auth.apiKeyId, {
             query: queryStr,
             collection,
             executionMs: elapsed,
             docCount: 1,
           });
           recordQueryPattern(auth.connectionId, queryStr);
+          rememberSuccess(toolName);
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ count }) }],
           };
@@ -670,13 +492,14 @@ function createMcpServer(auth: AuthContext): McpServer {
           });
           const limited = values.slice(0, maxDocs);
           const elapsed = Date.now() - start;
-          writeAuditLog("query", auth.connectionId, auth.apiKeyId, {
+          writeAuditLog(toolName, auth.connectionId, auth.apiKeyId, {
             query: queryStr,
             collection,
             executionMs: elapsed,
             docCount: limited.length,
           });
           recordQueryPattern(auth.connectionId, queryStr);
+          rememberSuccess(toolName);
           return {
             content: [
               { type: "text" as const, text: JSON.stringify(limited, null, 2) },
@@ -684,25 +507,21 @@ function createMcpServer(auth: AuthContext): McpServer {
           };
         }
         default:
-          return {
-            content: [{ type: "text" as const, text: `Unsupported operation: ${operation}` }],
-            isError: true,
-          };
+          return toolError(toolName, `Unsupported operation: ${operation}`);
       }
 
-      // Strip hidden fields
-      const cleaned = docs.map((d) => stripFields(d, hiddenFields));
+      const cleaned = docs.map((document) => stripFields(document, hiddenFields));
       const elapsed = Date.now() - start;
 
-      writeAuditLog("query", auth.connectionId, auth.apiKeyId, {
+      writeAuditLog(toolName, auth.connectionId, auth.apiKeyId, {
         query: queryStr,
         collection,
         executionMs: elapsed,
         docCount: cleaned.length,
       });
 
-      // Track query pattern for memory system
       recordQueryPattern(auth.connectionId, queryStr);
+      rememberSuccess(toolName);
 
       return {
         content: [
@@ -711,91 +530,589 @@ function createMcpServer(auth: AuthContext): McpServer {
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: "text" as const, text: `Query error: ${msg}` }],
-        isError: true,
-      };
+      return toolError(toolName, `Query error: ${msg}`);
     }
-  });
+  }
 
-  // ── sample_data ─────────────────────────────────────────────────
-  server.registerTool("sample_data", {
-    description:
-      "Get random sample documents from a collection using $sample aggregation.",
-    inputSchema: {
-      table_name: z.string().describe("The collection name to sample from"),
-      limit: z
-        .number()
-        .int()
-        .min(1)
-        .max(20)
-        .default(5)
-        .describe("Number of sample documents (max 20)"),
+  server.registerResource(
+    "guide",
+    "guide://usage",
+    {
+      title: "Guide",
+      description: "Usage guide and learned askdb tips.",
+      mimeType: "text/markdown",
     },
-  }, async ({ table_name, limit }) => {
-    const start = Date.now();
+    async () => ({
+      contents: [
+        {
+          uri: "guide://usage",
+          mimeType: "text/markdown",
+          text: await generateGuideMarkdown(auth.connectionId),
+        },
+      ],
+    })
+  );
 
-    const hiddenTables = getHiddenTableNames(auth.connectionId);
-    if (hiddenTables.has(table_name)) {
+  server.registerResource(
+    "schema-overview",
+    "schema://overview",
+    {
+      title: "Schema Overview",
+      description: "High-level schema overview with collections, relationships, gotchas, and common queries.",
+      mimeType: "text/markdown",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "schema://overview",
+          mimeType: "text/markdown",
+          text: await generateSchemaOverviewMarkdown(auth.connectionId),
+        },
+      ],
+    })
+  );
+
+  server.registerResource(
+    "insights",
+    "insights://global",
+    {
+      title: "Saved Insights",
+      description: "Saved agent insights for this connection.",
+      mimeType: "text/markdown",
+    },
+    async () => {
+      const insights = db
+        .select({
+          category: agentInsights.category,
+          collection: agentInsights.collection,
+          insight: agentInsights.insight,
+        })
+        .from(agentInsights)
+        .where(eq(agentInsights.connectionId, auth.connectionId))
+        .all();
+
       return {
-        content: [{ type: "text" as const, text: `Collection "${table_name}" is not accessible.` }],
-        isError: true,
-      };
-    }
-
-    const sampleSize = Math.min(limit ?? 5, 20);
-    const hiddenFields = getHiddenFieldNames(auth.connectionId);
-
-    try {
-      const mongoDb = await getMongoDb(auth.sandboxPort);
-      const coll = mongoDb.collection(table_name);
-      const docs = (await coll
-        .aggregate([{ $sample: { size: sampleSize } }], { maxTimeMS: 10_000 })
-        .toArray()) as Record<string, unknown>[];
-
-      const cleaned = docs.map((d) => stripFields(d, hiddenFields));
-      const elapsed = Date.now() - start;
-
-      writeAuditLog("sample_data", auth.connectionId, auth.apiKeyId, {
-        collection: table_name,
-        executionMs: elapsed,
-        docCount: cleaned.length,
-      });
-
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(cleaned, null, 2) },
+        contents: [
+          {
+            uri: "insights://global",
+            mimeType: "text/markdown",
+            text: buildInsightsResourceMarkdown(insights),
+          },
         ],
       };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: "text" as const, text: `Sample error: ${msg}` }],
-        isError: true,
-      };
     }
-  });
+  );
 
-  // ── get_schema_summary ──────────────────────────────────────────
-  server.registerTool("get_schema_summary", {
-    description:
-      "Get a complete schema overview: all visible collections with fields, relationships, and common query patterns. Use this first to understand the database before querying.",
-    inputSchema: {},
-  }, async () => {
-    const start = Date.now();
-    const markdown = generateSchemaMarkdown(auth.connectionId);
-    const elapsed = Date.now() - start;
-
-    writeAuditLog("get_schema_summary", auth.connectionId, auth.apiKeyId, {
-      executionMs: elapsed,
-    });
-
-    return {
-      content: [
-        { type: "text" as const, text: markdown },
+  server.registerResource(
+    "config",
+    "config://config",
+    {
+      title: "Server Config",
+      description: "Redacted askdb MCP configuration and safety controls.",
+      mimeType: "application/json",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "config://config",
+          mimeType: "application/json",
+          text: JSON.stringify(
+            buildConfigResourcePayload({
+              connectionId: auth.connectionId,
+              disabledItems: controls.disabledItems,
+              readOnly: controls.readOnly,
+              resources: resourceUris,
+              toolNames,
+            }),
+            null,
+            2
+          ),
+        },
       ],
-    };
-  });
+    })
+  );
+
+  server.registerResource(
+    "debug",
+    "debug://askdb",
+    {
+      title: "Debug",
+      description: "Recent askdb MCP debug state for this session.",
+      mimeType: "application/json",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "debug://askdb",
+          mimeType: "application/json",
+          text: JSON.stringify(
+            buildDebugResourcePayload(auth.connectionId, debugState),
+            null,
+            2
+          ),
+        },
+      ],
+    })
+  );
+
+  if (
+    isToolEnabled(controls, "list-collections", {
+      category: "mongodb",
+      operation: "metadata",
+    })
+  ) {
+    toolNames.push("list-collections");
+    server.registerTool(
+      "list-collections",
+      {
+        title: "List Collections",
+        description:
+          "List visible MongoDB collections for this tenant. Use this or the schema://overview resource before querying unfamiliar data.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {},
+      },
+      async () => {
+        const start = Date.now();
+        const tables = db
+          .select()
+          .from(schemaTables)
+          .where(
+            and(
+              eq(schemaTables.connectionId, auth.connectionId),
+              eq(schemaTables.isVisible, true)
+            )
+          )
+          .all();
+
+        const result = tables
+          .map((table) => {
+            const columns = db
+              .select({ isVisible: schemaColumns.isVisible })
+              .from(schemaColumns)
+              .where(eq(schemaColumns.tableId, table.id))
+              .all();
+
+            if (columns.length > 0 && !columns.some((column) => column.isVisible)) {
+              return null;
+            }
+
+            return {
+              name: table.name,
+              docCount: table.docCount,
+              description: table.description,
+            };
+          })
+          .filter((table): table is NonNullable<typeof table> => table !== null);
+
+        writeAuditLog("list-collections", auth.connectionId, auth.apiKeyId, {
+          executionMs: Date.now() - start,
+          docCount: result.length,
+        });
+        rememberSuccess("list-collections");
+
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      }
+    );
+  }
+
+  if (
+    isToolEnabled(controls, "collection-schema", {
+      category: "mongodb",
+      operation: "metadata",
+    })
+  ) {
+    toolNames.push("collection-schema");
+    server.registerTool(
+      "collection-schema",
+      {
+        title: "Collection Schema",
+        description:
+          "Describe one collection with fields, sample values, relationships, gotchas, and working examples. Use this before running queries against a collection you have not explored yet.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          collection: z.string().describe("The collection to inspect"),
+        },
+      },
+      async ({ collection }) => {
+        const start = Date.now();
+        const hiddenTables = getHiddenTableNames(auth.connectionId);
+        if (hiddenTables.has(collection)) {
+          return toolError("collection-schema", `Collection "${collection}" is not accessible.`);
+        }
+
+        const table = getAccessibleTable(auth.connectionId, collection);
+        if (!table) {
+          return toolError("collection-schema", `Collection "${collection}" not found.`);
+        }
+
+        const markdown = await generateCollectionDetailMarkdown(
+          auth.connectionId,
+          collection
+        );
+        if (!markdown) {
+          return toolError(
+            "collection-schema",
+            `Collection "${collection}" is not available for inspection.`
+          );
+        }
+
+        writeAuditLog("collection-schema", auth.connectionId, auth.apiKeyId, {
+          collection,
+          executionMs: Date.now() - start,
+          docCount: 1,
+        });
+        rememberSuccess("collection-schema");
+
+        return {
+          content: [{ type: "text" as const, text: markdown }],
+        };
+      }
+    );
+  }
+
+  if (
+    isToolEnabled(controls, "find", {
+      category: "mongodb",
+      operation: "read",
+    })
+  ) {
+    toolNames.push("find");
+    server.registerTool(
+      "find",
+      {
+        title: "Find",
+        description:
+          "Run a read-only MongoDB find query. Prefer this over the low-level query tool for standard document retrieval.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          collection: z.string().describe("The collection to query"),
+          filter: z.record(z.string(), z.unknown()).optional(),
+          limit: z.number().int().min(1).max(500).optional(),
+        },
+      },
+      async ({ collection, filter, limit }) =>
+        executeQueryOperation("find", {
+          collection,
+          operation: "find",
+          filter,
+          limit,
+        })
+    );
+  }
+
+  if (
+    isToolEnabled(controls, "aggregate", {
+      category: "mongodb",
+      operation: "read",
+    })
+  ) {
+    toolNames.push("aggregate");
+    server.registerTool(
+      "aggregate",
+      {
+        title: "Aggregate",
+        description:
+          "Run a read-only MongoDB aggregation pipeline. Use collection-schema first for field names, relationships, and known gotchas.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          collection: z.string().describe("The collection to query"),
+          pipeline: z
+            .array(z.record(z.string(), z.unknown()))
+            .describe("Aggregation pipeline stages"),
+          limit: z.number().int().min(1).max(500).optional(),
+        },
+      },
+      async ({ collection, pipeline, limit }) =>
+        executeQueryOperation("aggregate", {
+          collection,
+          operation: "aggregate",
+          pipeline,
+          limit,
+        })
+    );
+  }
+
+  if (
+    isToolEnabled(controls, "count", {
+      category: "mongodb",
+      operation: "read",
+    })
+  ) {
+    toolNames.push("count");
+    server.registerTool(
+      "count",
+      {
+        title: "Count",
+        description:
+          "Count documents in a collection with an optional filter.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          collection: z.string().describe("The collection to query"),
+          filter: z.record(z.string(), z.unknown()).optional(),
+        },
+      },
+      async ({ collection, filter }) =>
+        executeQueryOperation("count", {
+          collection,
+          operation: "count",
+          filter,
+        })
+    );
+  }
+
+  if (
+    isToolEnabled(controls, "distinct", {
+      category: "mongodb",
+      operation: "read",
+    })
+  ) {
+    toolNames.push("distinct");
+    server.registerTool(
+      "distinct",
+      {
+        title: "Distinct",
+        description:
+          "Return distinct values for one field in a collection with an optional filter.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          collection: z.string().describe("The collection to query"),
+          field: z.string().describe("The field to compute distinct values for"),
+          filter: z.record(z.string(), z.unknown()).optional(),
+          limit: z.number().int().min(1).max(500).optional(),
+        },
+      },
+      async ({ collection, field, filter, limit }) =>
+        executeQueryOperation("distinct", {
+          collection,
+          operation: "distinct",
+          field,
+          filter,
+          limit,
+        })
+    );
+  }
+
+  if (
+    isToolEnabled(controls, "sample-documents", {
+      category: "mongodb",
+      operation: "read",
+    })
+  ) {
+    toolNames.push("sample-documents");
+    server.registerTool(
+      "sample-documents",
+      {
+        title: "Sample Documents",
+        description:
+          "Get random sample documents from a collection using $sample. Use this after reviewing schema metadata when you need raw document examples.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          collection: z.string().describe("The collection to sample from"),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(20)
+            .default(5)
+            .describe("Number of sample documents (max 20)"),
+        },
+      },
+      async ({ collection, limit }) => {
+        const start = Date.now();
+        const hiddenTables = getHiddenTableNames(auth.connectionId);
+        if (hiddenTables.has(collection)) {
+          return toolError("sample-documents", `Collection "${collection}" is not accessible.`);
+        }
+
+        if (!getAccessibleTable(auth.connectionId, collection)) {
+          return toolError("sample-documents", `Collection "${collection}" not found.`);
+        }
+
+        const sampleSize = Math.min(limit ?? 5, 20);
+        const hiddenFields = getHiddenFieldNames(auth.connectionId);
+
+        try {
+          const mongoDb = await getMongoDb(auth.sandboxPort);
+          const coll = mongoDb.collection(collection);
+          const docs = (await coll
+            .aggregate([{ $sample: { size: sampleSize } }], { maxTimeMS: 10_000 })
+            .toArray()) as Record<string, unknown>[];
+
+          const cleaned = docs.map((document) => stripFields(document, hiddenFields));
+          const elapsed = Date.now() - start;
+
+          writeAuditLog("sample-documents", auth.connectionId, auth.apiKeyId, {
+            collection,
+            executionMs: elapsed,
+            docCount: cleaned.length,
+          });
+          rememberSuccess("sample-documents");
+
+          return {
+            content: [
+              { type: "text" as const, text: JSON.stringify(cleaned, null, 2) },
+            ],
+          };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return toolError("sample-documents", `Sample error: ${msg}`);
+        }
+      }
+    );
+  }
+
+  if (
+    isToolEnabled(controls, "query", {
+      category: "askdb",
+      operation: "read",
+    })
+  ) {
+    toolNames.push("query");
+    server.registerTool(
+      "query",
+      {
+        title: "Query",
+        description:
+          "Low-level compatibility tool. Execute a read-only MongoDB query envelope with { collection, operation, filter?, pipeline?, field?, limit? }. Prefer the dedicated find, aggregate, count, and distinct tools when possible.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          query: z
+            .string()
+            .describe(
+              'JSON query object, e.g. {"collection":"users","operation":"find","filter":{"status":"active"}}'
+            ),
+        },
+      },
+      async ({ query: queryStr }) => {
+        let parsed: {
+          collection: string;
+          operation: string;
+          filter?: Record<string, unknown>;
+          pipeline?: Record<string, unknown>[];
+          field?: string;
+          limit?: number;
+        };
+
+        try {
+          parsed = JSON.parse(queryStr);
+        } catch {
+          return toolError("query", "Invalid JSON in query parameter.");
+        }
+
+        return executeQueryOperation("query", parsed, queryStr);
+      }
+    );
+  }
+
+  if (
+    isToolEnabled(controls, "save-insight", {
+      category: "askdb",
+      operation: "update",
+    })
+  ) {
+    toolNames.push("save-insight");
+    server.registerTool(
+      "save-insight",
+      {
+        title: "Save Insight",
+        description:
+          "Save a useful insight after the user is satisfied with a result. Use this for durable gotchas, working patterns, enum values, date quirks, or join strategies that actually worked.",
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+        },
+        inputSchema: {
+          insight: z.string().min(1).describe("The useful thing you learned in natural language"),
+          collection: z
+            .string()
+            .optional()
+            .describe("Optional collection this insight applies to"),
+          category: z
+            .enum(["gotcha", "pattern", "tip"])
+            .describe("How this insight should be classified"),
+          exampleQuery: z
+            .string()
+            .optional()
+            .describe("Optional working MongoDB query JSON that demonstrates the insight"),
+        },
+      },
+      async ({ insight, collection, category, exampleQuery }) => {
+        const start = Date.now();
+        const normalizedInsight = insight.trim();
+        const normalizedCollection = normalizeOptionalString(collection);
+        const normalizedExampleQuery = normalizeOptionalString(exampleQuery);
+
+        if (!normalizedInsight) {
+          return toolError("save-insight", "Insight cannot be empty.");
+        }
+
+        if (normalizedCollection) {
+          const hiddenTables = getHiddenTableNames(auth.connectionId);
+          if (hiddenTables.has(normalizedCollection)) {
+            return toolError(
+              "save-insight",
+              `Collection "${normalizedCollection}" is not accessible.`
+            );
+          }
+
+          if (!getAccessibleTable(auth.connectionId, normalizedCollection)) {
+            return toolError(
+              "save-insight",
+              `Collection "${normalizedCollection}" not found.`
+            );
+          }
+        }
+
+        if (normalizedExampleQuery) {
+          try {
+            const parsed = JSON.parse(normalizedExampleQuery);
+            if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+              return toolError(
+                "save-insight",
+                "exampleQuery must be a JSON object string."
+              );
+            }
+          } catch {
+            return toolError("save-insight", "exampleQuery must contain valid JSON.");
+          }
+        }
+
+        const result = saveAgentInsight(db, {
+          apiKeyId: auth.apiKeyId,
+          category,
+          collection: normalizedCollection,
+          connectionId: auth.connectionId,
+          exampleQuery: normalizedExampleQuery,
+          insight: normalizedInsight,
+        });
+
+        invalidateGuideCache(auth.connectionId);
+        writeAuditLog("save-insight", auth.connectionId, auth.apiKeyId, {
+          query: normalizedExampleQuery ?? undefined,
+          collection: normalizedCollection ?? undefined,
+          executionMs: Date.now() - start,
+          docCount: 1,
+        });
+        rememberSuccess("save-insight");
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                result.status === "updated"
+                  ? `Updated existing insight. Confirmation count is now ${result.useCount}.`
+                  : "Insight saved.",
+            },
+          ],
+        };
+      }
+    );
+  }
 
   return server;
 }

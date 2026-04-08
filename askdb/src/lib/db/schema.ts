@@ -131,6 +131,27 @@ export const queryMemories = sqliteTable("query_memories", {
     .references(() => connections.id, { onDelete: "cascade" }),
 });
 
+export const agentInsights = sqliteTable("agent_insights", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  insight: text("insight").notNull(),
+  collection: text("collection"),
+  category: text("category").notNull().default("tip"),
+  exampleQuery: text("exampleQuery"),
+  useCount: integer("useCount").notNull().default(1),
+  lastConfirmedAt: integer("lastConfirmedAt", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  createdAt: integer("createdAt", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  connectionId: text("connectionId")
+    .notNull()
+    .references(() => connections.id, { onDelete: "cascade" }),
+  apiKeyId: text("apiKeyId")
+    .notNull()
+    .references(() => apiKeys.id, { onDelete: "cascade" }),
+});
+
 export const apiKeys = sqliteTable("api_keys", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   prefix: text("prefix").notNull(),

@@ -82,7 +82,7 @@ No data masking, no fake data. Hidden fields are simply omitted from every respo
 | **Sandbox isolation** | Production data cloned into a Docker container. AI reads the copy, never the original. |
 | **Field-level visibility** | Toggle any field or collection. Hidden fields are stripped from all MCP responses. |
 | **PII auto-detection** | Fields like `email`, `password`, `ssn`, `phone` are auto-detected and pre-hidden. |
-| **4 MCP tools** | `list_tables`, `describe_table`, `query`, `sample_data` &mdash; all respect visibility config. |
+| **MongoDB-style MCP surface** | Resources: `guide://usage`, `schema://overview`, `insights://global`, `config://config`, `debug://askdb`. Tools: `list-collections`, `collection-schema`, `find`, `aggregate`, `count`, `distinct`, `sample-documents`, `query`, `save-insight`. |
 | **Query validation** | Allowlist-only: `find`, `aggregate`, `count`, `distinct`. Write operations rejected. |
 | **Pipeline security** | Rejects `$merge`, `$out`, `$lookup` on hidden collections, and other dangerous stages. |
 | **Audit logging** | Every MCP query logged with timestamp, execution time, and document count. |
@@ -90,36 +90,37 @@ No data masking, no fake data. Hidden fields are simply omitted from every respo
 | **Manual sync** | Re-sync from production with one click. Schema changes detected automatically. |
 | **Self-hosted** | Your server, your data. Nothing leaves your infrastructure. |
 
-## MCP Tools
+## MCP Surface
 
-The MCP server exposes 4 tools that AI agents can call:
+askdb now follows the official MongoDB MCP usage pattern while keeping askdb-specific safety and memory features.
 
-### `list_tables`
+### Resources
 
-Returns all visible collections with document counts. Hidden collections and collections with all fields hidden are excluded.
+- `guide://usage` &mdash; workflow guidance and saved tips
+- `schema://overview` &mdash; schema overview with relationships, gotchas, and common queries
+- `insights://global` &mdash; saved agent insights for this connection
+- `config://config` &mdash; redacted server config and active safety controls
+- `debug://askdb` &mdash; recent session error/debug state
 
-### `describe_table`
+### Metadata Tools
 
-Returns visible fields for a collection: name, BSON type, and a sample value. Hidden fields are not listed.
+- `list-collections` &mdash; list visible collections with counts and descriptions
+- `collection-schema` &mdash; detailed schema, relationships, gotchas, and working examples for one collection
 
-### `query`
+### Query Tools
 
-Executes a read-only MongoDB query against the sandbox. Supports `find` and `aggregate` operations.
+- `find`
+- `aggregate`
+- `count`
+- `distinct`
+- `sample-documents`
+- `query` &mdash; low-level compatibility tool that accepts the full JSON query envelope
 
-```json
-{
-  "collection": "users",
-  "operation": "find",
-  "filter": { "plan": "pro" },
-  "limit": 10
-}
-```
+All query tools are read-only, strip hidden fields from results, enforce a 10-second timeout, and cap returned documents at 500 (`sample-documents` caps at 20).
 
-Hidden fields are stripped from results. 10-second timeout, max 500 documents.
+### askdb Extension
 
-### `sample_data`
-
-Returns random documents from a collection (max 20). Hidden fields stripped.
+- `save-insight` &mdash; persist successful gotchas, tips, and working patterns so future agents improve over time
 
 ## Connecting Your AI Agent
 
@@ -272,7 +273,7 @@ scripts/
 askdb is designed with these invariants:
 
 1. **Production databases are never written to** &mdash; read-only connections only
-2. **Hidden fields never appear in MCP responses** &mdash; stripped from `list_tables`, `describe_table`, `query`, and `sample_data`
+2. **Hidden fields never appear in MCP responses** &mdash; stripped from resources and tools including `list-collections`, `collection-schema`, `find`, `aggregate`, `count`, `distinct`, `sample-documents`, and `query`
 3. **Hidden collections are never listed or queryable**
 4. **All queries are validated** &mdash; only `find`, `aggregate`, `count`, `distinct` allowed
 5. **Dangerous aggregation stages are blocked** &mdash; `$merge`, `$out`, `$collStats`, `$currentOp`, `$listSessions`

@@ -85,8 +85,8 @@ Fields like <code>email</code>, <code>password</code>, <code>ssn</code>, <code>p
 </tr>
 <tr>
 <td align="center">
-<h3>4 MCP Tools</h3>
-<code>list_tables</code>, <code>describe_table</code>, <code>query</code>, <code>sample_data</code> &mdash; all respect visibility config.
+<h3>MongoDB-Style MCP</h3>
+Resources plus tools like <code>list-collections</code>, <code>collection-schema</code>, <code>find</code>, <code>aggregate</code>, <code>count</code>, <code>distinct</code>, <code>sample-documents</code>, and <code>save-insight</code>.
 </td>
 <td align="center">
 <h3>Query Validation</h3>
@@ -162,7 +162,7 @@ Your Prod MongoDB ──> mongodump ──> Sandbox Container
 3. **Configure** &mdash; browse your schema with real sample data, toggle fields visible or hidden
 4. **Query** &mdash; give your AI agent the MCP URL &mdash; hidden fields are stripped from every response
 
-The AI never knows hidden fields exist. `list_tables` doesn't list hidden collections. `describe_table` doesn't list hidden fields. Query results don't include them.
+The AI never knows hidden fields exist. Hidden collections are excluded from metadata tools and hidden fields are stripped from resources and query results.
 
 <br/>
 
