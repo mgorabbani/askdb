@@ -1,0 +1,26 @@
+{
+  "name": "askdb-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx scripts/dev-runner.ts watch",
+    "dev:once": "tsx scripts/dev-runner.ts dev",
+    "dev:server": "pnpm --filter @askdb/server dev",
+    "dev:ui": "pnpm --filter @askdb/ui dev",
+    "dev:mcp": "pnpm --filter @askdb/mcp-server dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @askdb/shared db:generate",
+    "db:migrate": "pnpm --filter @askdb/shared db:migrate",
+    "db:studio": "pnpm --filter @askdb/shared db:studio"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}

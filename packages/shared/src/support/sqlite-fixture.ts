@@ -1,0 +1,188 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { ensureDatabaseSchema } from "../db/bootstrap.js";
+import * as schema from "../db/schema.js";
+
+const tempDir = mkdtempSync(join(tmpdir(), "askdb-tests-"));
+export const TEST_DB_PATH = join(tempDir, "askdb.db");
+
+process.env.DATABASE_PATH = TEST_DB_PATH;
+
+const sqlite = new Database(TEST_DB_PATH);
+sqlite.pragma("journal_mode = WAL");
+sqlite.pragma("foreign_keys = ON");
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS user (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    emailVerified INTEGER NOT NULL,
+    image TEXT,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS connections (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    dbType TEXT NOT NULL DEFAULT 'mongodb',
+    databaseName TEXT NOT NULL DEFAULT '',
+    connectionString TEXT NOT NULL,
+    sandboxContainerId TEXT,
+    sandboxPort INTEGER,
+    syncStatus TEXT NOT NULL DEFAULT 'IDLE',
+    syncError TEXT,
+    lastSyncAt INTEGER,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    userId TEXT NOT NULL REFERENCES user(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS api_keys (
+    id TEXT PRIMARY KEY,
+    prefix TEXT NOT NULL,
+    keyHash TEXT NOT NULL UNIQUE,
+    label TEXT,
+    revokedAt INTEGER,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    userId TEXT NOT NULL REFERENCES user(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS schema_tables (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    docCount INTEGER NOT NULL DEFAULT 0,
+    isVisible INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS schema_columns (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    fieldType TEXT NOT NULL,
+    sampleValue TEXT,
+    isVisible INTEGER NOT NULL DEFAULT 1,
+    piiConfidence TEXT NOT NULL DEFAULT 'NONE',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    tableId TEXT NOT NULL REFERENCES schema_tables(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS schema_relationships (
+    id TEXT PRIMARY KEY,
+    sourceTableId TEXT NOT NULL REFERENCES schema_tables(id) ON DELETE CASCADE,
+    sourceField TEXT NOT NULL,
+    targetTableId TEXT NOT NULL REFERENCES schema_tables(id) ON DELETE CASCADE,
+    targetField TEXT NOT NULL DEFAULT '_id',
+    relationType TEXT NOT NULL DEFAULT 'belongsTo',
+    confidence TEXT NOT NULL DEFAULT 'AUTO',
+    createdAt INTEGER NOT NULL,
+    connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS query_memories (
+    id TEXT PRIMARY KEY,
+    pattern TEXT NOT NULL,
+    description TEXT NOT NULL,
+    exampleQuery TEXT,
+    collection TEXT,
+    frequency INTEGER NOT NULL DEFAULT 1,
+    lastUsedAt INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    query TEXT,
+    collection TEXT,
+    executionMs INTEGER NOT NULL DEFAULT 0,
+    docCount INTEGER NOT NULL DEFAULT 0,
+    createdAt INTEGER NOT NULL,
+    connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    apiKeyId TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE
+  );
+`);
+ensureDatabaseSchema(sqlite);
+
+export const testDb = drizzle(sqlite, { schema });
+
+export function resetTestDatabase() {
+  sqlite.exec(`
+    DELETE FROM audit_logs;
+    DELETE FROM agent_insights;
+    DELETE FROM query_memories;
+    DELETE FROM schema_relationships;
+    DELETE FROM schema_columns;
+    DELETE FROM schema_tables;
+    DELETE FROM api_keys;
+    DELETE FROM connections;
+    DELETE FROM user;
+  `);
+}
+
+export function seedAuthFixture(ids?: {
+  apiKeyId?: string;
+  connectionId?: string;
+  userId?: string;
+}) {
+  const now = new Date("2026-04-09T00:00:00.000Z");
+  const userId = ids?.userId ?? "user_test";
+  const connectionId = ids?.connectionId ?? "conn_test";
+  const apiKeyId = ids?.apiKeyId ?? "key_test";
+
+  testDb.insert(schema.user).values({
+    id: userId,
+    name: "Test User",
+    email: `${userId}@example.com`,
+    emailVerified: true,
+    image: null,
+    createdAt: now,
+    updatedAt: now,
+  }).run();
+
+  testDb.insert(schema.connections).values({
+    id: connectionId,
+    name: "Test Connection",
+    dbType: "mongodb",
+    databaseName: "testdb",
+    connectionString: "mongodb://example",
+    sandboxContainerId: null,
+    sandboxPort: 27017,
+    syncStatus: "IDLE",
+    syncError: null,
+    lastSyncAt: null,
+    createdAt: now,
+    updatedAt: now,
+    userId,
+  }).run();
+
+  testDb.insert(schema.apiKeys).values({
+    id: apiKeyId,
+    prefix: "ask_sk_test",
+    keyHash: `hash_${apiKeyId}`,
+    label: "test",
+    revokedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    userId,
+  }).run();
+
+  return { apiKeyId, connectionId, now, userId };
+}
+
+process.on("exit", () => {
+  try {
+    sqlite.close();
+  } catch {}
+
+  rmSync(tempDir, { force: true, recursive: true });
+});

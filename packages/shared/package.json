@@ -1,0 +1,45 @@
+{
+  "name": "@askdb/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./db": "./src/db/index.ts",
+    "./db/schema": "./src/db/schema.ts",
+    "./adapters/mongodb": "./src/adapters/mongodb/index.ts",
+    "./adapters/mongodb/sync": "./src/adapters/mongodb/sync.ts",
+    "./adapters/mongodb/introspect": "./src/adapters/mongodb/introspect.ts",
+    "./crypto/encryption": "./src/crypto/encryption.ts",
+    "./auth/api-keys": "./src/auth/api-keys.ts",
+    "./docker/manager": "./src/docker/manager.ts",
+    "./pii/patterns": "./src/pii/patterns.ts",
+    "./memory/extractor": "./src/memory/extractor.ts",
+    "./memory/insights": "./src/memory/insights.ts",
+    "./schema-summary/generator": "./src/schema-summary/generator.ts",
+    "./test-support/sqlite-fixture": "./src/support/sqlite-fixture.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "dockerode": "^4.0.10",
+    "drizzle-orm": "^0.45.2",
+    "mongodb": "^7.1.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/dockerode": "^4.0.1",
+    "@types/node": "^25.6.0",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
