@@ -86,7 +86,7 @@ Fields like <code>email</code>, <code>password</code>, <code>ssn</code>, <code>p
 <tr>
 <td align="center">
 <h3>MongoDB-Style MCP</h3>
-Resources plus tools like <code>list-collections</code>, <code>collection-schema</code>, <code>find</code>, <code>aggregate</code>, <code>count</code>, <code>distinct</code>, <code>sample-documents</code>, and <code>save-insight</code>.
+Resources plus tools like <code>list-collections</code>, <code>collection-schema</code>, <code>find</code>, <code>aggregate</code>, <code>count</code>, <code>distinct</code>, <code>sample-documents</code>, <code>execute-typescript</code>, and <code>save-insight</code>.
 </td>
 <td align="center">
 <h3>Query Validation</h3>
@@ -112,6 +112,35 @@ Full schema summary with field types, relationships, and descriptions &mdash; ag
 </td>
 </tr>
 </table>
+
+<br/>
+
+## Code Mode
+
+The `execute-typescript` MCP tool lets the AI write a small TypeScript program that composes multiple Mongo queries inside a sandboxed [QuickJS](https://bellard.org/quickjs/) WebAssembly isolate. One round trip in, one structured result out &mdash; instead of N+1 separate tool calls.
+
+Why it matters:
+
+- **Math is correct.** Sums, averages, percentages run as actual JavaScript inside the sandbox. The model decides what to compute; the sandbox computes it.
+- **Token cost drops.** A query that touches 500 documents lives and dies inside the isolate. Only the final result crosses the wire to the model.
+- **Security is unchanged.** Every `external_*` call inside the sandbox routes through the same `executeQueryOperation` that the direct `find`/`aggregate`/`count`/`distinct` tools use. Hidden fields are stripped before data crosses into the sandbox. The isolate has no `fs`, no `process`, no `require`, no `fetch`, no globals at all beyond the four bridge functions.
+
+Example program the model writes:
+
+```ts
+const top = await external_find({ collection: "products", limit: 5 });
+const ratings = await Promise.all(
+  top.map((p) =>
+    external_find({ collection: "ratings", filter: { productId: p._id } })
+  )
+);
+return top.map((p, i) => ({
+  name: p.name,
+  avgRating: ratings[i].reduce((s, r) => s + r.score, 0) / ratings[i].length,
+}));
+```
+
+Limits per execution: 30s wall-clock timeout, 128MB memory, 50 bridge calls, 256KB serialized result. Disable the tool entirely by adding `execute-typescript` to `ASKDB_MCP_DISABLED_TOOLS`.
 
 <br/>
 
@@ -298,7 +327,13 @@ pnpm build            # Build all packages
 pnpm typecheck        # Type check all packages
 pnpm db:generate      # Generate DB migration
 pnpm db:migrate       # Apply migrations
+
+# Tests
+pnpm --filter @askdb/mcp-server test    # Unit tests (sandbox isolation, bridge, runtime)
+pnpm --filter @askdb/mcp-server e2e     # End-to-end test against real MongoDB (requires Docker)
 ```
+
+The `e2e` script boots a throwaway MongoDB container, seeds two collections, spins up a temporary askdb MCP server pointed at a temp SQLite DB, and walks through the full Streamable HTTP transport with the official MCP client. It asserts that hidden fields are stripped before data crosses into the Code Mode sandbox &mdash; the cleanest way to verify nothing has regressed end to end.
 
 ### Project Structure
 
@@ -338,6 +373,7 @@ askdb/
 - [x] Agent memory (query pattern tracking)
 - [x] Schema cache for agent context
 - [x] CLI tool
+- [x] Code Mode (`execute-typescript` MCP tool with QuickJS-WASM sandbox)
 - [ ] PostgreSQL adapter
 - [ ] MySQL adapter
 - [ ] Multi-user / team management
