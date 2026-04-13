@@ -51,6 +51,8 @@ import {
   readServerControls,
 } from "./patterns.js";
 
+import { registerExecuteTypescriptTool } from "./code-mode/tool.js";
+
 const {
   agentInsights,
   apiKeys,
@@ -1106,6 +1108,25 @@ function createMcpServer(auth: AuthContext): McpServer {
         };
       }
     );
+  }
+
+  if (
+    isToolEnabled(controls, "execute-typescript", {
+      category: "askdb",
+      operation: "read",
+    })
+  ) {
+    toolNames.push("execute-typescript");
+    registerExecuteTypescriptTool({
+      server,
+      auth: { connectionId: auth.connectionId, apiKeyId: auth.apiKeyId },
+      executeQueryOperation,
+      hooks: {
+        writeAuditLog,
+        rememberSuccess,
+        rememberError,
+      },
+    });
   }
 
   return server;

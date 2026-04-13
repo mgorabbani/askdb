@@ -7,7 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts"
+    "test": "node --import tsx --test 'src/**/*.test.ts'",
+    "e2e": "node --import tsx scripts/test-code-mode-e2e.ts"
   },
   "dependencies": {
     "@askdb/shared": "workspace:*",
@@ -15,11 +16,14 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mongodb": "^7.1.1",
+    "quickjs-emscripten": "^0.32.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
+    "better-sqlite3": "^12.9.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }
