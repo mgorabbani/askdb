@@ -18,6 +18,7 @@ const { isSignupLocked } = await import("./lib/auth.js");
 const { connectionsRouter } = await import("./routes/connections.js");
 const { keysRouter } = await import("./routes/keys.js");
 const { auditRouter } = await import("./routes/audit.js");
+const { startSyncScheduler } = await import("@askdb/shared");
 
 type UIMode = "vite-dev" | "static" | "none";
 const uiMode: UIMode = process.env.UI_DEV_MIDDLEWARE === "1"
@@ -82,6 +83,8 @@ async function main() {
   app.listen(PORT, () => {
     console.log(`[server] listening on http://localhost:${PORT} (uiMode=${uiMode})`);
   });
+
+  startSyncScheduler();
 }
 
 main().catch((err) => {

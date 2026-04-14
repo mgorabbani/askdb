@@ -10,6 +10,7 @@ export { generateApiKey, hashKey } from "./auth/api-keys.js";
 export type { DatabaseAdapter, IntrospectionResult, QueryResult } from "./adapters/types.js";
 export { MongoDBAdapter } from "./adapters/mongodb/index.js";
 export { syncConnection } from "./adapters/mongodb/sync.js";
+export { startSyncScheduler, stopSyncScheduler } from "./adapters/mongodb/scheduler.js";
 export { introspectAndSave } from "./adapters/mongodb/introspect.js";
 export { detectRelationships } from "./adapters/mongodb/relationships.js";
 export { sandboxManager } from "./docker/manager.js";
