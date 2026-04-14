@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams } from "react-router";
+import { useParams, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronDown, ChevronRight, ShieldAlert, RefreshCw, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ShieldAlert, RefreshCw, Loader2, AlertTriangle } from "lucide-react";
+import { DeleteConnectionButton } from "@/components/delete-connection-button";
 
 interface SchemaColumn {
   id: string;
@@ -38,13 +39,21 @@ interface SyncStatus {
   sandbox: { running: boolean; port: number } | null;
 }
 
+interface ConnectionMeta {
+  id: string;
+  name: string;
+  dbType: string;
+}
+
 export default function SchemaBrowserPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [tables, setTables] = useState<SchemaTable[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [meta, setMeta] = useState<ConnectionMeta | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchSchema = useCallback(async () => {
@@ -52,6 +61,15 @@ export default function SchemaBrowserPage() {
     const res = await fetch(`/api/connections/${id}/schema`);
     if (res.ok) setTables(await res.json());
     setLoading(false);
+  }, [id]);
+
+  const fetchMeta = useCallback(async () => {
+    if (!id) return;
+    const res = await fetch(`/api/connections/${id}`);
+    if (res.ok) {
+      const data = await res.json();
+      setMeta({ id: data.id, name: data.name, dbType: data.dbType });
+    }
   }, [id]);
 
   const fetchStatus = useCallback(async () => {
@@ -76,7 +94,8 @@ export default function SchemaBrowserPage() {
   useEffect(() => {
     fetchSchema();
     fetchStatus();
-  }, [fetchSchema, fetchStatus]);
+    fetchMeta();
+  }, [fetchSchema, fetchStatus, fetchMeta]);
 
   useEffect(() => {
     if (syncing && !pollRef.current) {
@@ -207,8 +226,13 @@ export default function SchemaBrowserPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Schema Browser</h1>
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {meta?.dbType ?? "Schema"}
+          </p>
+          <h1 className="mt-0.5 truncate text-2xl font-semibold tracking-tight">
+            {meta?.name ?? "Schema Browser"}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {tables.length} collections · {visibleCount} visible to the agent
           </p>
@@ -295,7 +319,7 @@ export default function SchemaBrowserPage() {
                 </button>
 
                 {isOpen && (
-                  <div className="border-t bg-muted/20 px-5 py-3">
+                  <div className="overflow-x-auto border-t bg-muted/20 px-5 py-3">
                     <Table>
                       <TableHeader>
                         <TableRow className="hover:bg-transparent">
@@ -343,6 +367,38 @@ export default function SchemaBrowserPage() {
           })}
         </ul>
       </Card>
+
+      {meta && (
+        <Card className="gap-0 border-destructive/30 bg-destructive/5 py-0">
+          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold">Danger zone</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Delete this connection, its sandbox container, schema cache,
+                and all related data. This action cannot be undone.
+              </p>
+            </div>
+            <DeleteConnectionButton
+              connectionId={meta.id}
+              connectionName={meta.name}
+              onDeleted={() => navigate("/dashboard")}
+              render={
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  onClick={(e: React.MouseEvent) => e.preventDefault()}
+                />
+              }
+            >
+              Delete connection
+            </DeleteConnectionButton>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

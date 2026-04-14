@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactElement, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,10 +16,14 @@ export function DeleteConnectionButton({
   connectionId,
   connectionName,
   onDeleted,
+  render,
+  children,
 }: {
   connectionId: string;
   connectionName: string;
   onDeleted?: () => void;
+  render?: ReactElement;
+  children?: ReactNode;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -40,19 +44,19 @@ export function DeleteConnectionButton({
     }
   }
 
+  const triggerRender = render ?? (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="text-muted-foreground hover:text-destructive"
+      onClick={(e: React.MouseEvent) => e.preventDefault()}
+    />
+  );
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:text-destructive"
-            onClick={(e: React.MouseEvent) => e.preventDefault()}
-          />
-        }
-      >
-        <Trash2 className="h-4 w-4" />
+      <DialogTrigger render={triggerRender}>
+        {children ?? <Trash2 className="h-4 w-4" />}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

@@ -93,14 +93,14 @@ export default function AuditPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Audit Log</h1>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">Audit Log</h1>
         <span className="text-sm text-muted-foreground">{total} total entries</span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <select
-          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
+          className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm sm:flex-none"
           value={filterConnection}
           onChange={(e) => {
             setFilterConnection(e.target.value);
@@ -116,7 +116,7 @@ export default function AuditPage() {
         </select>
 
         <select
-          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
+          className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm sm:flex-none"
           value={filterAction}
           onChange={(e) => {
             setFilterAction(e.target.value);
@@ -143,7 +143,7 @@ export default function AuditPage() {
         </Card>
       ) : (
         <>
-          <div className="rounded-md border">
+          <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -208,16 +208,28 @@ export default function AuditPage() {
             </Table>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
               Page {page} of {totalPages}
             </p>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="flex-1 sm:flex-none"
+              >
                 <ChevronLeft className="mr-1 h-4 w-4" />
                 Previous
               </Button>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="flex-1 sm:flex-none"
+              >
                 Next
                 <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
