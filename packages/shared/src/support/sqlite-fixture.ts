@@ -10,6 +10,7 @@ const tempDir = mkdtempSync(join(tmpdir(), "askdb-tests-"));
 export const TEST_DB_PATH = join(tempDir, "askdb.db");
 
 process.env.DATABASE_PATH = TEST_DB_PATH;
+process.env.ENCRYPTION_KEY ??= "11".repeat(32);
 
 const sqlite = new Database(TEST_DB_PATH);
 sqlite.pragma("journal_mode = WAL");
@@ -22,6 +23,10 @@ export function resetTestDatabase() {
   sqlite.exec(`
     DELETE FROM audit_logs;
     DELETE FROM agent_insights;
+    DELETE FROM oauth_refresh_tokens;
+    DELETE FROM oauth_access_tokens;
+    DELETE FROM oauth_authorization_codes;
+    DELETE FROM oauth_clients;
     DELETE FROM query_memories;
     DELETE FROM schema_relationships;
     DELETE FROM schema_columns;

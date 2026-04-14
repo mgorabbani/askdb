@@ -15,6 +15,7 @@ if (process.env.DATABASE_PATH && !path.isAbsolute(process.env.DATABASE_PATH)) {
 const { default: express } = await import("express");
 const { authRouter } = await import("./routes/auth.js");
 const { isSignupLocked } = await import("./lib/auth.js");
+const { createMcpOAuthRouter, getMcpPublicUrl } = await import("./lib/mcp-oauth.js");
 const { connectionsRouter } = await import("./routes/connections.js");
 const { keysRouter } = await import("./routes/keys.js");
 const { auditRouter } = await import("./routes/audit.js");
@@ -34,6 +35,7 @@ async function main() {
 
   // Body parsing — note better-auth needs the raw stream, so mount auth BEFORE json()
   app.use("/api/auth", authRouter);
+  app.use(createMcpOAuthRouter());
 
   app.use(express.json({ limit: "1mb" }));
 
@@ -45,6 +47,13 @@ async function main() {
   // Tells the UI whether the first-run /setup flow should be shown.
   app.get("/api/setup-status", async (_req, res) => {
     res.json({ needsSetup: !(await isSignupLocked()) });
+  });
+
+  app.get("/api/mcp/config", (_req, res) => {
+    res.json({
+      mcpUrl: getMcpPublicUrl().href,
+      oauth: true,
+    });
   });
 
   // API routes

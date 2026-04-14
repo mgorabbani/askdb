@@ -7,6 +7,27 @@ export { db, getDb } from "./db/index.js";
 export { ensureDatabaseSchema } from "./db/bootstrap.js";
 export { encrypt, decrypt } from "./crypto/encryption.js";
 export { generateApiKey, hashKey } from "./auth/api-keys.js";
+export {
+  MCP_OAUTH_SUPPORTED_SCOPES,
+  createAuthorizationCodeGrant,
+  exchangeAuthorizationCodeGrant,
+  exchangeRefreshTokenGrant,
+  getAccessTokenTtlSeconds,
+  getAuthorizationCodeChallenge,
+  getAuthorizationCodeTtlSeconds,
+  getDefaultConnectionForUser,
+  getOAuthAuditApiKeyId,
+  getOAuthClient,
+  getRefreshTokenTtlSeconds,
+  normalizeOAuthScopes,
+  revokeOAuthToken,
+  storeOAuthClient,
+  verifyOAuthAccessToken,
+} from "./auth/oauth.js";
+export type {
+  OAuthClientRecord,
+  OAuthVerifiedAccessToken,
+} from "./auth/oauth.js";
 export type { DatabaseAdapter, IntrospectionResult, QueryResult } from "./adapters/types.js";
 export { MongoDBAdapter } from "./adapters/mongodb/index.js";
 export { syncConnection } from "./adapters/mongodb/sync.js";

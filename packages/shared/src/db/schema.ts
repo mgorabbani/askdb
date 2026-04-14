@@ -165,6 +165,71 @@ export const apiKeys = sqliteTable("api_keys", {
     .references(() => user.id),
 });
 
+export const oauthClients = sqliteTable("oauth_clients", {
+  id: text("id").primaryKey(),
+  encryptedClient: text("encryptedClient").notNull(),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const oauthAuthorizationCodes = sqliteTable("oauth_authorization_codes", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  codeHash: text("codeHash").notNull().unique(),
+  clientId: text("clientId")
+    .notNull()
+    .references(() => oauthClients.id, { onDelete: "cascade" }),
+  userId: text("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  connectionId: text("connectionId")
+    .notNull()
+    .references(() => connections.id, { onDelete: "cascade" }),
+  redirectUri: text("redirectUri").notNull(),
+  codeChallenge: text("codeChallenge").notNull(),
+  scopes: text("scopes").notNull().default(""),
+  resource: text("resource").notNull(),
+  expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const oauthAccessTokens = sqliteTable("oauth_access_tokens", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tokenHash: text("tokenHash").notNull().unique(),
+  clientId: text("clientId")
+    .notNull()
+    .references(() => oauthClients.id, { onDelete: "cascade" }),
+  userId: text("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  connectionId: text("connectionId")
+    .notNull()
+    .references(() => connections.id, { onDelete: "cascade" }),
+  scopes: text("scopes").notNull().default(""),
+  resource: text("resource").notNull(),
+  expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
+  revokedAt: integer("revokedAt", { mode: "timestamp" }),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const oauthRefreshTokens = sqliteTable("oauth_refresh_tokens", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tokenHash: text("tokenHash").notNull().unique(),
+  clientId: text("clientId")
+    .notNull()
+    .references(() => oauthClients.id, { onDelete: "cascade" }),
+  userId: text("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  connectionId: text("connectionId")
+    .notNull()
+    .references(() => connections.id, { onDelete: "cascade" }),
+  scopes: text("scopes").notNull().default(""),
+  resource: text("resource").notNull(),
+  expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
+  revokedAt: integer("revokedAt", { mode: "timestamp" }),
+  createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
 export const auditLogs = sqliteTable("audit_logs", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   action: text("action").notNull(),

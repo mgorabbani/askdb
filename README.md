@@ -279,6 +279,7 @@ If everything (UI, agents, you) lives on the same machine, leave `3001` unmapped
 | `BETTER_AUTH_SECRET`  | 64 hex chars. `openssl rand -hex 32`. Rotating logs out all sessions. |
 | `ENCRYPTION_KEY`      | 64 hex chars. AES-256-GCM key for stored connection strings. **Do not lose this** — losing it makes saved connections unrecoverable. |
 | `BETTER_AUTH_URL`     | Must match the public URL the browser hits. Wrong value breaks auth cookies/redirects. |
+| `MCP_PUBLIC_URL`      | Canonical public MCP URL. Set this for remote OAuth clients like Claude if `/mcp` is exposed on a different host/path than the default. |
 | `DATABASE_PATH`       | Defaults to `/app/data/askdb.db` inside the container. Leave it alone unless you know why. |
 
 ### Persistent state
@@ -349,7 +350,20 @@ The same pattern works for Dokploy and Portainer — they all consume the compos
 
 ## Connecting Your AI Agent
 
-After setup, create an API key in the dashboard, then add to your AI tool:
+### Claude
+
+For Claude web or Claude Desktop remote connectors:
+
+1. Open **Claude → Customize → Connectors**
+2. Add a custom connector
+3. Paste your public MCP URL, for example `https://YOUR_SERVER/mcp`
+4. Complete the OAuth approval flow in your browser
+
+Claude uses OAuth for remote MCP connectors, so you do **not** need to paste an API key header there.
+
+### API Key Clients
+
+For clients that still expect a fixed bearer token header, create an API key in the dashboard, then add it to your AI tool:
 
 ### Claude Desktop / Claude Code
 

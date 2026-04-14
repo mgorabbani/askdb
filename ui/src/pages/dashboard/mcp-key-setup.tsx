@@ -17,20 +17,28 @@ export default function McpKeySetupPage() {
   const { keyId } = useParams<{ keyId: string }>();
   const [keyInfo, setKeyInfo] = useState<ApiKeyInfo | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const mcpUrl =
-    typeof window !== "undefined"
-      ? `${window.location.protocol}//${window.location.hostname}:3001/mcp`
-      : "http://localhost:3001/mcp";
+  const [mcpUrl, setMcpUrl] = useState("http://localhost:3001/mcp");
 
   useEffect(() => {
     async function fetchKey() {
-      const res = await fetch("/api/keys");
-      if (res.ok) {
-        const keys: ApiKeyInfo[] = await res.json();
+      const [keysRes, configRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/mcp/config"),
+      ]);
+
+      if (keysRes.ok) {
+        const keys: ApiKeyInfo[] = await keysRes.json();
         const found = keys.find((k) => k.id === keyId);
         setKeyInfo(found ?? null);
       }
+
+      if (configRes.ok) {
+        const config = await configRes.json() as { mcpUrl?: string };
+        if (typeof config.mcpUrl === "string" && config.mcpUrl) {
+          setMcpUrl(config.mcpUrl);
+        }
+      }
+
       setLoading(false);
     }
     fetchKey();

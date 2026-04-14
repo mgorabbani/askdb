@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Database } from "lucide-react";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -38,6 +39,19 @@ export default function LoginPage() {
       setError(authError.message || "Login failed");
       setLoading(false);
       return;
+    }
+
+    const next = searchParams.get("next");
+    if (next) {
+      try {
+        const target = new URL(next, window.location.origin);
+        if (target.origin === window.location.origin) {
+          window.location.assign(`${target.pathname}${target.search}${target.hash}`);
+          return;
+        }
+      } catch {
+        // Fall through to dashboard when the return target is malformed.
+      }
     }
 
     navigate("/dashboard");

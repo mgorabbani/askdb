@@ -17,49 +17,35 @@ export default function McpSetupPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const mcpUrl =
-    typeof window !== "undefined"
-      ? `${window.location.protocol}//${window.location.hostname}:3001/mcp`
-      : "http://localhost:3001/mcp";
+  const [mcpUrl, setMcpUrl] = useState("http://localhost:3001/mcp");
 
   useEffect(() => {
-    async function fetchKeys() {
-      const res = await fetch("/api/keys");
-      if (res.ok) {
-        const data: ApiKey[] = await res.json();
+    async function fetchSetupData() {
+      const [keysRes, configRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/mcp/config"),
+      ]);
+
+      if (keysRes.ok) {
+        const data: ApiKey[] = await keysRes.json();
         setKeys(data);
         if (data.length > 0 && data[0]) setSelectedKey(data[0].prefix);
       }
+
+      if (configRes.ok) {
+        const data = await configRes.json() as { mcpUrl?: string };
+        if (typeof data.mcpUrl === "string" && data.mcpUrl) {
+          setMcpUrl(data.mcpUrl);
+        }
+      }
+
       setLoading(false);
     }
-    fetchKeys();
+    fetchSetupData();
   }, []);
 
   if (loading) {
     return <p className="text-muted-foreground">Loading...</p>;
-  }
-
-  if (keys.length === 0) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold">MCP Setup</h1>
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center gap-4 py-12">
-            <Key className="h-12 w-12 text-muted-foreground/50" />
-            <p className="text-muted-foreground">
-              Create an API key first to get your MCP configuration.
-            </p>
-            <Link to="/dashboard/keys">
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Create API Key
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
   }
 
   const keyPlaceholder = selectedKey ? `${selectedKey}...` : "<YOUR_API_KEY>";
@@ -145,7 +131,8 @@ export default function McpSetupPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">MCP Setup</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Connect askdb to your MCP-compatible client with one of the configs below.
+          Connect askdb to Claude via OAuth or use an API key for clients that require fixed
+          headers.
         </p>
       </div>
 
@@ -157,6 +144,13 @@ export default function McpSetupPage() {
           <CardContent className="space-y-3">
             <CopyField label="MCP Endpoint" value={mcpUrl} />
             <CopyField label="Transport" value="streamable-http" />
+            <div className="rounded-lg border bg-muted/40 p-3">
+              <p className="mb-1 text-xs font-medium text-muted-foreground">Claude Web</p>
+              <p className="text-sm text-foreground">
+                In Claude, add a custom connector, paste the MCP endpoint, and finish the OAuth
+                approval flow in your browser. No API key header is needed.
+              </p>
+            </div>
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">API Key</p>
               {keys.length > 1 ? (
@@ -189,17 +183,32 @@ export default function McpSetupPage() {
                     <span className="shrink-0 text-xs text-muted-foreground">{keys[0].label}</span>
                   )}
                 </div>
-              ) : null}
-              <p className="mt-2 text-xs text-muted-foreground">
-                Replace <code className="rounded bg-muted px-1 py-0.5">{keyPlaceholder}</code> with
-                your full key (shown once at creation).{" "}
+              ) : (
+                <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
+                  Claude web works over OAuth without an API key. Create a key only for local MCP
+                  clients such as Claude Code, Cursor, or ChatGPT.
+                </div>
+              )}
+              {keys.length > 0 ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Replace <code className="rounded bg-muted px-1 py-0.5">{keyPlaceholder}</code>{" "}
+                  with your full key (shown once at creation).{" "}
+                  <Link
+                    to="/dashboard/keys"
+                    className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline"
+                  >
+                    Manage keys <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </p>
+              ) : (
                 <Link
                   to="/dashboard/keys"
-                  className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline"
+                  className="inline-flex items-center gap-2 text-sm font-medium underline-offset-4 hover:underline"
                 >
-                  Manage keys <ExternalLink className="h-3 w-3" />
+                  <Plus className="h-4 w-4" />
+                  Create an API key for local clients
                 </Link>
-              </p>
+              )}
             </div>
           </CardContent>
         </Card>

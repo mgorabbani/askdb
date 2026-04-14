@@ -22,11 +22,18 @@ import express from "express";
 import { MongoClient, type Db as MongoDb } from "mongodb";
 import { z } from "zod";
 
+import {
+  getOAuthProtectedResourceMetadataUrl,
+  mcpAuthMetadataRouter,
+} from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
+import { InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import {
+  MCP_OAUTH_SUPPORTED_SCOPES,
   db,
   schema,
   hashKey,
@@ -40,6 +47,7 @@ import {
   generateSchemaOverviewMarkdown,
   invalidateGuideCache,
   saveAgentInsight,
+  verifyOAuthAccessToken,
 } from "@askdb/shared";
 
 import {
@@ -70,16 +78,54 @@ interface AuthContext {
   apiKeyId: string;
   connectionId: string;
   sandboxPort: number;
+  authType: "api_key" | "oauth";
+  clientId: string;
+  scopes: string[];
 }
 
-function authenticate(authHeader: string | undefined): AuthContext | null {
-  if (!authHeader?.startsWith("Bearer ")) return null;
-  const token = authHeader.slice(7);
+function isLocalHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function getOAuthIssuerUrl(): URL {
+  const raw = process.env.MCP_OAUTH_ISSUER_URL
+    ?? process.env.BETTER_AUTH_URL
+    ?? `http://localhost:${process.env.PORT ?? "3100"}`;
+  const url = new URL(raw);
+  return new URL(url.origin);
+}
+
+function getMcpPublicUrl(): URL {
+  const configured = process.env.MCP_PUBLIC_URL;
+  if (configured) return new URL(configured);
+
+  const authBase = process.env.BETTER_AUTH_URL
+    ? new URL(process.env.BETTER_AUTH_URL)
+    : new URL(`http://localhost:${process.env.PORT ?? "3100"}`);
+
+  if (isLocalHostname(authBase.hostname)) {
+    return new URL(`http://localhost:${process.env.MCP_PORT || "3001"}/mcp`);
+  }
+
+  return new URL("/mcp", authBase);
+}
+
+function getConnectionContext(connectionId: string) {
+  const conn = db
+    .select()
+    .from(connections)
+    .where(eq(connections.id, connectionId))
+    .get();
+
+  if (!conn || !conn.sandboxPort) return null;
+  return conn;
+}
+
+function authenticateApiKeyToken(token: string): AuthContext | null {
   if (!token.startsWith("ask_sk_")) return null;
 
   const hash = hashKey(token);
 
-  // Look up the API key (not revoked)
   const keyRow = db
     .select()
     .from(apiKeys)
@@ -88,22 +134,76 @@ function authenticate(authHeader: string | undefined): AuthContext | null {
 
   if (!keyRow) return null;
 
-  // Find the user's connection (take first active one)
   const conn = db
     .select()
     .from(connections)
     .where(eq(connections.userId, keyRow.userId))
-    .get();
+    .all()
+    .find((row) => typeof row.sandboxPort === "number");
 
-  if (!conn || !conn.sandboxPort) return null;
+  if (!conn || !conn.sandboxPort) {
+    return null;
+  }
 
   return {
     userId: keyRow.userId,
     apiKeyId: keyRow.id,
     connectionId: conn.id,
     sandboxPort: conn.sandboxPort,
+    authType: "api_key",
+    clientId: `legacy-api-key:${keyRow.id}`,
+    scopes: [...MCP_OAUTH_SUPPORTED_SCOPES],
   };
 }
+
+const mcpPublicUrl = getMcpPublicUrl();
+const oauthIssuerUrl = getOAuthIssuerUrl();
+const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(mcpPublicUrl);
+
+const tokenVerifier = {
+  async verifyAccessToken(token: string) {
+    const legacyAuth = authenticateApiKeyToken(token);
+    if (legacyAuth) {
+      return {
+        token,
+        clientId: legacyAuth.clientId,
+        scopes: legacyAuth.scopes,
+        expiresAt: 4102444800,
+        resource: mcpPublicUrl,
+        extra: { ...legacyAuth },
+      };
+    }
+
+    const verified = verifyOAuthAccessToken(db, token);
+    if (!verified) {
+      throw new InvalidTokenError("Invalid or expired token");
+    }
+
+    const conn = getConnectionContext(verified.connectionId);
+    if (!conn) {
+      throw new InvalidTokenError("No active sandbox connection found for this token");
+    }
+
+    const auth: AuthContext = {
+      userId: verified.userId,
+      apiKeyId: verified.apiKeyId,
+      connectionId: verified.connectionId,
+      sandboxPort: conn.sandboxPort!,
+      authType: "oauth",
+      clientId: verified.clientId,
+      scopes: verified.scopes,
+    };
+
+    return {
+      token,
+      clientId: verified.clientId,
+      scopes: verified.scopes,
+      expiresAt: Math.floor(verified.expiresAt.getTime() / 1000),
+      resource: new URL(verified.resource),
+      extra: { ...auth },
+    };
+  },
+};
 
 // ── MongoDB helpers ─────────────────────────────────────────────────
 
@@ -1135,19 +1235,73 @@ function createMcpServer(auth: AuthContext): McpServer {
 // ── Express app + transport management ──────────────────────────────
 
 const app = express();
+const oauthMetadata = {
+  issuer: oauthIssuerUrl.href,
+  authorization_endpoint: new URL("/authorize", oauthIssuerUrl).href,
+  token_endpoint: new URL("/token", oauthIssuerUrl).href,
+  registration_endpoint: new URL("/register", oauthIssuerUrl).href,
+  revocation_endpoint: new URL("/revoke", oauthIssuerUrl).href,
+  response_types_supported: ["code"],
+  code_challenge_methods_supported: ["S256"],
+  token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
+  revocation_endpoint_auth_methods_supported: ["client_secret_post"],
+  grant_types_supported: ["authorization_code", "refresh_token"],
+  scopes_supported: [...MCP_OAUTH_SUPPORTED_SCOPES],
+};
+
+app.use(
+  mcpAuthMetadataRouter({
+    oauthMetadata,
+    resourceServerUrl: mcpPublicUrl,
+    scopesSupported: [...MCP_OAUTH_SUPPORTED_SCOPES],
+    resourceName: "askdb MCP",
+    serviceDocumentationUrl: new URL("/dashboard/setup", oauthIssuerUrl),
+  })
+);
+
+const authMiddleware = requireBearerAuth({
+  verifier: tokenVerifier,
+  resourceMetadataUrl,
+});
+
 app.use(express.json());
 
 // Map session ID → transport
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 
+function getRequestAuthContext(req: express.Request): AuthContext | null {
+  const extra = req.auth?.extra as Partial<AuthContext> | undefined;
+  if (
+    !extra
+    || typeof extra.userId !== "string"
+    || typeof extra.apiKeyId !== "string"
+    || typeof extra.connectionId !== "string"
+    || typeof extra.sandboxPort !== "number"
+    || typeof extra.clientId !== "string"
+    || (extra.authType !== "api_key" && extra.authType !== "oauth")
+    || !Array.isArray(extra.scopes)
+  ) {
+    return null;
+  }
+
+  return {
+    userId: extra.userId,
+    apiKeyId: extra.apiKeyId,
+    connectionId: extra.connectionId,
+    sandboxPort: extra.sandboxPort,
+    authType: extra.authType,
+    clientId: extra.clientId,
+    scopes: extra.scopes.filter((scope): scope is string => typeof scope === "string"),
+  };
+}
+
 // POST /mcp — main MCP endpoint
-app.post("/mcp", async (req, res) => {
-  // Authenticate
-  const auth = authenticate(req.headers.authorization);
+app.post("/mcp", authMiddleware, async (req, res) => {
+  const auth = getRequestAuthContext(req);
   if (!auth) {
     res.status(401).json({
       jsonrpc: "2.0",
-      error: { code: -32001, message: "Unauthorized: invalid or missing API key" },
+      error: { code: -32001, message: "Unauthorized" },
       id: null,
     });
     return;
@@ -1207,15 +1361,14 @@ app.post("/mcp", async (req, res) => {
 });
 
 // GET /mcp — SSE stream
-app.get("/mcp", async (req, res) => {
+app.get("/mcp", authMiddleware, async (req, res) => {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   if (!sessionId || !transports[sessionId]) {
     res.status(400).send("Invalid or missing session ID");
     return;
   }
 
-  const auth = authenticate(req.headers.authorization);
-  if (!auth) {
+  if (!getRequestAuthContext(req)) {
     res.status(401).send("Unauthorized");
     return;
   }
@@ -1225,15 +1378,14 @@ app.get("/mcp", async (req, res) => {
 });
 
 // DELETE /mcp — session termination
-app.delete("/mcp", async (req, res) => {
+app.delete("/mcp", authMiddleware, async (req, res) => {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   if (!sessionId || !transports[sessionId]) {
     res.status(400).send("Invalid or missing session ID");
     return;
   }
 
-  const auth = authenticate(req.headers.authorization);
-  if (!auth) {
+  if (!getRequestAuthContext(req)) {
     res.status(401).send("Unauthorized");
     return;
   }

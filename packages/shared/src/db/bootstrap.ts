@@ -84,6 +84,53 @@ export function ensureDatabaseSchema(sqlite: SqliteExecDatabase) {
       userId TEXT NOT NULL REFERENCES user(id)
     );
 
+    CREATE TABLE IF NOT EXISTS oauth_clients (
+      id TEXT PRIMARY KEY NOT NULL,
+      encryptedClient TEXT NOT NULL,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+      id TEXT PRIMARY KEY NOT NULL,
+      codeHash TEXT NOT NULL UNIQUE,
+      clientId TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+      redirectUri TEXT NOT NULL,
+      codeChallenge TEXT NOT NULL,
+      scopes TEXT NOT NULL DEFAULT '',
+      resource TEXT NOT NULL,
+      expiresAt INTEGER NOT NULL,
+      createdAt INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_access_tokens (
+      id TEXT PRIMARY KEY NOT NULL,
+      tokenHash TEXT NOT NULL UNIQUE,
+      clientId TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+      scopes TEXT NOT NULL DEFAULT '',
+      resource TEXT NOT NULL,
+      expiresAt INTEGER NOT NULL,
+      revokedAt INTEGER,
+      createdAt INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+      id TEXT PRIMARY KEY NOT NULL,
+      tokenHash TEXT NOT NULL UNIQUE,
+      clientId TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+      scopes TEXT NOT NULL DEFAULT '',
+      resource TEXT NOT NULL,
+      expiresAt INTEGER NOT NULL,
+      revokedAt INTEGER,
+      createdAt INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS schema_tables (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
