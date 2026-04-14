@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,20 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/setup-status")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.needsSetup) {
+          navigate("/setup", { replace: true });
+        } else {
+          setChecking(false);
+        }
+      })
+      .catch(() => setChecking(false));
+  }, [navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,6 +42,8 @@ export default function LoginPage() {
 
     navigate("/dashboard");
   }
+
+  if (checking) return null;
 
   return (
     <Card>

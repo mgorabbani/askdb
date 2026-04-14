@@ -14,6 +14,7 @@ if (process.env.DATABASE_PATH && !path.isAbsolute(process.env.DATABASE_PATH)) {
 
 const { default: express } = await import("express");
 const { authRouter } = await import("./routes/auth.js");
+const { isSignupLocked } = await import("./lib/auth.js");
 const { connectionsRouter } = await import("./routes/connections.js");
 const { keysRouter } = await import("./routes/keys.js");
 const { auditRouter } = await import("./routes/audit.js");
@@ -38,6 +39,11 @@ async function main() {
   // Health check
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, uiMode, timestamp: new Date().toISOString() });
+  });
+
+  // Tells the UI whether the first-run /setup flow should be shown.
+  app.get("/api/setup-status", async (_req, res) => {
+    res.json({ needsSetup: !(await isSignupLocked()) });
   });
 
   // API routes
