@@ -115,7 +115,7 @@ export function createMcpOAuthRouter(): RequestHandler {
               resource: requestedResource,
               scopes,
             },
-            formAction: req.path,
+            formAction: req.originalUrl.split("?")[0] || "/authorize",
           })
         );
         return;
