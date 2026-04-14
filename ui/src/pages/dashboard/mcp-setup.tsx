@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { CopyButton } from "@/components/copy-button";
-import { Key, Plus, ExternalLink } from "lucide-react";
+import { Plus, ExternalLink } from "lucide-react";
 
 interface ApiKey {
   id: string;
