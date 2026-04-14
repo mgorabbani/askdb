@@ -1,0 +1,21 @@
+services:
+  askdb:
+    build: .
+    image: askdb:local
+    container_name: askdb
+    restart: unless-stopped
+    ports:
+      - "3100:3100"   # API + UI
+      - "3001:3001"   # MCP
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /app/data/askdb.db
+      SERVE_UI: "1"
+    volumes:
+      - askdb-data:/app/data
+      # Required: askdb spawns sandbox MongoDB containers via dockerode.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  askdb-data:

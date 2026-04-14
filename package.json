@@ -7,13 +7,15 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "tsx scripts/dev-runner.ts watch",
-    "dev:once": "tsx scripts/dev-runner.ts dev",
-    "dev:server": "pnpm --filter @askdb/server dev",
+    "dev": "tsx scripts/dev-runner.ts",
+    "dev:server": "UI_DEV_MIDDLEWARE=1 pnpm --filter @askdb/server dev",
     "dev:ui": "pnpm --filter @askdb/ui dev",
     "dev:mcp": "pnpm --filter @askdb/mcp-server dev",
     "build": "pnpm -r build",
+    "start": "SERVE_UI=1 pnpm --filter @askdb/server start",
+    "start:mcp": "pnpm --filter @askdb/mcp-server start",
     "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @askdb/mcp-server test",
     "db:generate": "pnpm --filter @askdb/shared db:generate",
     "db:migrate": "pnpm --filter @askdb/shared db:migrate",
     "db:studio": "pnpm --filter @askdb/shared db:studio"

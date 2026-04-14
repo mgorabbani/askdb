@@ -339,15 +339,19 @@ The `e2e` script boots a throwaway MongoDB container, seeds two collections, spi
 
 ```
 askdb/
-├── server/              # Express API server (@askdb/server)
-├── ui/                  # Vite React dashboard (@askdb/ui)
+├── server/              # @askdb/server — Express API + UI host
+├── ui/                  # @askdb/ui — Vite React SPA
+├── cli/                 # @askdb/cli — askdb CLI
 ├── packages/
-│   ├── shared/          # DB schema, adapters, crypto (@askdb/shared)
-│   ├── mcp-server/      # MCP server (@askdb/mcp-server)
-│   └── cli/             # CLI tool (askdb-cli)
+│   ├── shared/          # @askdb/shared — DB schema, adapters, crypto
+│   └── mcp-server/      # @askdb/mcp-server — standalone MCP
 ├── scripts/
-│   └── dev-runner.ts    # Dev orchestration (watch + restart)
-└── data/                # SQLite database (local)
+│   └── dev-runner.ts    # Zero-dep orchestrator: spawns server + mcp
+├── docker/
+│   └── entrypoint.sh    # Runtime entrypoint (server + mcp under tini)
+├── Dockerfile           # Multi-stage: deps → build → runtime
+├── docker-compose.yml   # One-command self-host
+└── data/                # SQLite database (gitignored, mounted as volume in prod)
 ```
 
 ### Tech Stack

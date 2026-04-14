@@ -1,7 +1,8 @@
 {
-  "name": "askdb-cli",
+  "name": "@askdb/cli",
   "version": "0.1.0",
   "description": "CLI for askdb — ask your database anything",
+  "private": true,
   "type": "module",
   "bin": {
     "askdb": "./dist/index.js"
@@ -9,7 +10,8 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "Golam Rabbani",

@@ -29,6 +29,11 @@ export class AskdbClient {
     return res;
   }
 
+  private async fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await this.fetch(path, init);
+    return (await res.json()) as T;
+  }
+
   private requireConnectionId(): string {
     if (!this.connectionId) {
       console.error("No connection selected. Run `askdb connections` first.");
@@ -40,16 +45,14 @@ export class AskdbClient {
   // ── Connections ─────────────────────────────────────────────────
 
   async listConnections(): Promise<Connection[]> {
-    const res = await this.fetch("/api/connections");
-    return res.json();
+    return this.fetchJson<Connection[]>("/api/connections");
   }
 
   // ── Schema ──────────────────────────────────────────────────────
 
   async getSchema(): Promise<SchemaTable[]> {
     const id = this.requireConnectionId();
-    const res = await this.fetch(`/api/connections/${id}/schema`);
-    return res.json();
+    return this.fetchJson<SchemaTable[]>(`/api/connections/${id}/schema`);
   }
 
   async getSchemaSummary(): Promise<string> {
@@ -73,8 +76,7 @@ export class AskdbClient {
 
   async listTables(): Promise<TableInfo[]> {
     const id = this.requireConnectionId();
-    const res = await this.fetch(`/api/connections/${id}/schema`);
-    const tables: SchemaTable[] = await res.json();
+    const tables = await this.fetchJson<SchemaTable[]>(`/api/connections/${id}/schema`);
     return tables
       .filter((t) => t.isVisible)
       .filter((t) => t.columns?.some((c) => c.isVisible))
@@ -83,8 +85,7 @@ export class AskdbClient {
 
   async describeTable(tableName: string): Promise<FieldInfo[]> {
     const id = this.requireConnectionId();
-    const res = await this.fetch(`/api/connections/${id}/schema`);
-    const tables: SchemaTable[] = await res.json();
+    const tables = await this.fetchJson<SchemaTable[]>(`/api/connections/${id}/schema`);
     const table = tables.find(
       (t) => t.name === tableName && t.isVisible
     );
@@ -103,8 +104,7 @@ export class AskdbClient {
 
   async getMemories(): Promise<Memory[]> {
     const id = this.requireConnectionId();
-    const res = await this.fetch(`/api/connections/${id}/memories`);
-    return res.json();
+    return this.fetchJson<Memory[]>(`/api/connections/${id}/memories`);
   }
 
   async addMemory(memory: {

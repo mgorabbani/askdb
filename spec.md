@@ -27,6 +27,7 @@ Business teams need data answers ("how many users signed up this week?") but cur
 Connect your MongoDB once, configure what data AI agents can see (visible or hidden per field/collection), and get an MCP connection to use in Claude, ChatGPT, or any MCP-compatible tool.
 
 **Core flow:**
+
 ```
 Paste MongoDB URL → askdb clones to sandbox → see real sample rows
 → toggle which fields/collections to hide → save config
@@ -34,6 +35,7 @@ Paste MongoDB URL → askdb clones to sandbox → see real sample rows
 ```
 
 **Key principles:**
+
 - **MongoDB-first** (extensible to other DBs via adapter pattern)
 - **Two simple policies** — visible (AI sees real data) or hidden (field stripped entirely)
 - Zero data on askdb servers (sandbox lives in Docker container alongside the app)
@@ -47,17 +49,18 @@ Paste MongoDB URL → askdb clones to sandbox → see real sample rows
 
 ## Target Users
 
-| Tier | Who | Need |
-|------|-----|------|
-| **Primary** | Startup CTO / technical founder | Connect MongoDB, give self (and later team) self-serve data access in 10 minutes |
-| **Secondary** | Solo developer with a side project | Ask questions about their data in Claude/ChatGPT |
-| **Tertiary** | Enterprise (future) | Self-hosted, SSO/SAML, audit logs, data stays in VPC |
+| Tier          | Who                                | Need                                                                             |
+| ------------- | ---------------------------------- | -------------------------------------------------------------------------------- |
+| **Primary**   | Startup CTO / technical founder    | Connect MongoDB, give self (and later team) self-serve data access in 10 minutes |
+| **Secondary** | Solo developer with a side project | Ask questions about their data in Claude/ChatGPT                                 |
+| **Tertiary**  | Enterprise (future)                | Self-hosted, SSO/SAML, audit logs, data stays in VPC                             |
 
 ---
 
 ## Architecture
 
 ### System Diagram
+
 ```
 ┌─────────────────────────────────────────────────┐
 │                   Your Server                     │
@@ -85,14 +88,16 @@ Paste MongoDB URL → askdb clones to sandbox → see real sample rows
 ```
 
 **Key decisions:**
+
 - **Express + Vite React** — Express serves API routes and the React SPA. In development, Vite runs as Express middleware (HMR). In production, Express serves pre-built static assets.
 - **Separate MCP process** — MCP server runs as standalone Express on port 3001, sharing SQLite via `DATABASE_PATH` env var.
 - **SQLite** — app database. File-based, zero config, perfect for single-user self-hosted. Drizzle ORM.
 - **Docker volumes** — sandbox MongoDB data persists across container restarts/crashes.
 - **Dynamic container** — sandbox MongoDB is created by the app via `dockerode` when user connects a database, not pre-defined in docker-compose.
-- **pnpm monorepo** — packages/shared, packages/mcp-server, packages/cli, server/, ui/. Following Paperclip's architecture patterns.
+- **pnpm monorepo** — apps live at root (`server/`, `ui/`, `cli/`), shared libraries under `packages/*`. Single `pnpm dev` brings up server + MCP with one command.
 
 ### Data Flow
+
 ```
 User's Prod MongoDB ──▶ mongodump ──▶ mongorestore to sandbox container ──▶ ready
                                               │
@@ -122,6 +127,7 @@ The AI never knows hidden fields exist. `list_tables` doesn't list hidden collec
 ### Database Adapter Pattern
 
 Each supported database implements a common interface:
+
 - Validate connection
 - Dump from production (read-only)
 - Restore to sandbox container
@@ -133,6 +139,7 @@ Each supported database implements a common interface:
 Only MongoDB is implemented for MVP. Adding a new database type means implementing this interface — nothing else changes.
 
 ### What We Store vs. Don't Store
+
 - **Store:** User account, connection configs, visibility configs, API keys (hashed), audit logs
 - **Never store:** Database content, query results, connection strings in plaintext (encrypted at rest via app secret), user's production data
 
@@ -141,12 +148,15 @@ Only MongoDB is implemented for MVP. Adding a new database type means implementi
 ## Setup Flow (the core UX)
 
 ### Step 1: First run
+
 First visit → `/setup` page → create admin account (email + password).
 
 ### Step 2: Connect MongoDB
+
 Paste connection string → validate (read-only test) → check database size (warn >5GB, reject >20GB).
 
 ### Step 3: Sandbox created
+
 App spins up sandbox MongoDB container via Docker API, runs mongodump/mongorestore. Progress indicator shown.
 
 ### Step 4: Schema browser with sample data
@@ -154,6 +164,7 @@ App spins up sandbox MongoDB container via Docker API, runs mongodump/mongoresto
 **This is the key screen.** User sees every collection with a sample of the latest document, and toggles visibility per field and per collection.
 
 **Key UX details:**
+
 - User sees **real data** from the latest document — they need to see actual values to decide what to hide
 - PII fields are auto-detected and **pre-unchecked** (hidden by default). User can override.
 - Internal collections (`system.*`, `_migrations`) are auto-hidden
@@ -162,6 +173,7 @@ App spins up sandbox MongoDB container via Docker API, runs mongodump/mongoresto
 - **Changing a toggle doesn't require re-sync** — it's applied at query time
 
 ### Step 5: MCP URL ready
+
 Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 
 ---
@@ -169,26 +181,30 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 ## MCP Server Spec
 
 ### Endpoint
+
 - `http://<VPS_IP>:3001/mcp`
 - Auth: Bearer token (API key)
 - Runs as separate Express process from the main API server
 
 ### 4 MCP Tools
 
-| Tool | Input | Description |
-|------|-------|-------------|
-| `list_tables` | (none) | Returns only visible collections with document counts. Hidden collections not listed. Collections with all fields hidden are excluded. |
-| `describe_table` | `table_name` | Returns only visible field names, types, and sample values. Hidden fields not listed. |
-| `query` | `query` (string) | MongoDB JSON query — find or aggregation pipeline. Read-only enforced. 10s timeout, max 500 docs. Hidden fields stripped from results. |
-| `sample_data` | `table_name`, `limit` | Returns random sample documents (max 20). Hidden fields stripped. |
+| Tool             | Input                 | Description                                                                                                                            |
+| ---------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_tables`    | (none)                | Returns only visible collections with document counts. Hidden collections not listed. Collections with all fields hidden are excluded. |
+| `describe_table` | `table_name`          | Returns only visible field names, types, and sample values. Hidden fields not listed.                                                  |
+| `query`          | `query` (string)      | MongoDB JSON query — find or aggregation pipeline. Read-only enforced. 10s timeout, max 500 docs. Hidden fields stripped from results. |
+| `sample_data`    | `table_name`, `limit` | Returns random sample documents (max 20). Hidden fields stripped.                                                                      |
 
 ### Query Format
 
 ```json
-{ "query": "{ \"collection\": \"users\", \"operation\": \"find\", \"filter\": { \"created_at\": { \"$gt\": \"2025-01-01\" } } }" }
+{
+  "query": "{ \"collection\": \"users\", \"operation\": \"find\", \"filter\": { \"created_at\": { \"$gt\": \"2025-01-01\" } } }"
+}
 ```
 
 ### Query Validation
+
 - **Allowlist only:** `find`, `aggregate`, `count`, `distinct`
 - **Reject everything else:** insert, update, delete, drop, createIndex, etc.
 - **Aggregation pipeline security:** Reject `$merge`, `$out`, `$collStats`, `$currentOp`, `$listSessions`. Reject `$lookup` if it references a hidden collection.
@@ -198,6 +214,7 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 - All queries logged to audit trail
 
 ### Middleware Pipeline
+
 1. Extract Bearer token
 2. Look up API key → validate
 3. Load visibility config (which fields/collections are visible)
@@ -209,6 +226,7 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 ## Pages & UI
 
 ### Tech Stack
+
 - Vite + React 19 (SPA with React Router)
 - Express (API server, serves UI in production)
 - shadcn/ui (with Tailwind CSS v4)
@@ -217,18 +235,19 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 
 ### Page Map
 
-| Route | Purpose |
-|-------|---------|
-| `/setup` | First-run: create admin account (shown once, only if no admin exists) |
-| `/login` | Sign in |
-| `/dashboard` | Overview (connections, recent queries) |
-| `/dashboard/connect` | Connect MongoDB wizard |
-| `/dashboard/connections/:id/schema` | Schema browser with sample data + visibility toggles |
-| `/dashboard/keys` | API key management |
-| `/dashboard/audit` | Audit log viewer |
-| `/dashboard/setup/:keyId` | MCP connection instructions (copy buttons for Claude, ChatGPT, Cursor) |
+| Route                               | Purpose                                                                |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| `/setup`                            | First-run: create admin account (shown once, only if no admin exists)  |
+| `/login`                            | Sign in                                                                |
+| `/dashboard`                        | Overview (connections, recent queries)                                 |
+| `/dashboard/connect`                | Connect MongoDB wizard                                                 |
+| `/dashboard/connections/:id/schema` | Schema browser with sample data + visibility toggles                   |
+| `/dashboard/keys`                   | API key management                                                     |
+| `/dashboard/audit`                  | Audit log viewer                                                       |
+| `/dashboard/setup/:keyId`           | MCP connection instructions (copy buttons for Claude, ChatGPT, Cursor) |
 
 ### Key UI Components
+
 - **First-Run Setup Page** — "Welcome to askdb" → create admin account → redirect to dashboard
 - **Connection Wizard** — Paste MongoDB URL → validate → size check → create sandbox → schema browser
 - **Schema Browser** — Table showing each field with type, sample value from latest document, and visible/hidden toggle. PII fields auto-detected and pre-set to hidden. Changes take effect immediately.
@@ -241,6 +260,7 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 ## API Endpoints
 
 ### Connections
+
 - `POST /api/connections` — Add new MongoDB connection
 - `GET /api/connections` — List connections
 - `GET /api/connections/:id` — Get connection details
@@ -250,20 +270,24 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 - `GET /api/connections/:id/status` — Get sync/container status
 
 ### Schema
+
 - `GET /api/connections/:id/schema` — Full schema tree with sample data
 - `PATCH /api/connections/:id/schema/tables/:tableId` — Toggle collection visibility
 - `PATCH /api/connections/:id/schema/columns/:columnId` — Toggle field visibility
 - `POST /api/connections/:id/schema/auto-detect` — Run PII auto-detection
 
 ### API Keys
+
 - `POST /api/keys` — Create new API key
 - `GET /api/keys` — List API keys
 - `DELETE /api/keys/:id` — Revoke API key
 
 ### Audit
+
 - `GET /api/audit` — List audit logs (paginated)
 
 ### MCP
+
 - `ALL /mcp` — MCP server endpoint (Streamable HTTP)
 
 ---
@@ -271,15 +295,18 @@ Connection instructions with copy buttons for Claude Desktop, ChatGPT, Cursor.
 ## Auth
 
 ### Single-user self-hosted auth
+
 1. First visit → `/setup` page (only shown if no admin exists)
 2. Create admin account (email + password, bcrypt hashed)
 3. Sessions via JWT in httpOnly cookies
 4. No team, no roles, no invites (post-MVP)
 
 ### API Key Format
+
 ```
 ask_sk_{random_32_chars}
 ```
+
 - Prefix stored in DB for display: `ask_sk_a1b2...`
 - Full key hashed (SHA-256) and stored
 - Key shown once on creation, never again
@@ -310,6 +337,7 @@ npx askdb onboard --yes
 ```
 
 What the CLI does:
+
 1. Checks prerequisites (Node.js 20+, Docker running)
 2. Generates `.env` with random secrets (BETTER_AUTH_SECRET, ENCRYPTION_KEY)
 3. Runs `pnpm install`
@@ -326,6 +354,7 @@ curl -sSL https://get.askdb.dev | bash
 ```
 
 What the installer does:
+
 1. Checks OS (Linux) and architecture
 2. Installs Docker if not present
 3. Generates secrets → `.env`
@@ -338,16 +367,17 @@ What the installer does:
 Managed cloud version at askdb.dev. Not in MVP scope.
 
 ### Docker Compose
+
 ```yaml
 services:
   app:
     image: askdb/askdb:latest
     ports:
-      - "3100:3100"   # Dashboard + API
-      - "3001:3001"   # MCP server
+      - "3100:3100" # Dashboard + API
+      - "3001:3001" # MCP server
     volumes:
-      - ./data:/app/data                              # SQLite DB
-      - /var/run/docker.sock:/var/run/docker.sock      # manage sandbox containers
+      - ./data:/app/data # SQLite DB
+      - /var/run/docker.sock:/var/run/docker.sock # manage sandbox containers
     environment:
       - SERVE_UI=true
     env_file: .env
@@ -359,13 +389,14 @@ Sandbox MongoDB container is created dynamically by the app (not in compose). Us
 
 The Express server selects how to serve UI based on environment:
 
-| Mode | Env Var | Behavior |
-|------|---------|----------|
-| `vite-dev` | `UI_DEV_MIDDLEWARE=true` | Vite middleware in Express (HMR, live reload) |
-| `static` | `SERVE_UI=true` | Pre-built `ui/dist/` served via `express.static()` + SPA catch-all |
-| `none` | neither | API-only, no UI |
+| Mode       | Env Var                  | Behavior                                                           |
+| ---------- | ------------------------ | ------------------------------------------------------------------ |
+| `vite-dev` | `UI_DEV_MIDDLEWARE=true` | Vite middleware in Express (HMR, live reload)                      |
+| `static`   | `SERVE_UI=true`          | Pre-built `ui/dist/` served via `express.static()` + SPA catch-all |
+| `none`     | neither                  | API-only, no UI                                                    |
 
 ### Sync (Manual Only)
+
 1. User clicks "Sync Now" on dashboard
 2. App connects to prod MongoDB (read-only)
 3. Runs `mongodump` → streams to disk
@@ -378,6 +409,7 @@ The Express server selects how to serve UI based on environment:
 ## Security
 
 ### Invariants (must ALWAYS hold)
+
 1. Production MongoDB is NEVER written to (read-only connections)
 2. Hidden fields must NEVER appear in any MCP tool response
 3. Hidden collections must NEVER be listed or queryable via MCP
@@ -388,12 +420,14 @@ The Express server selects how to serve UI based on environment:
 8. Connection strings encrypted at rest, never in logs/errors/responses
 
 ### MongoDB-specific security
+
 - **Aggregation pipeline:** Reject `$merge`, `$out`, `$collStats`, `$currentOp`, `$listSessions`
 - **$lookup:** Reject if referencing a hidden collection
 - **Write operations:** Strict allowlist — only `find`, `aggregate`, `count`, `distinct` permitted
 - **Query parsing:** Parse JSON pipeline before execution, reject on any disallowed stage
 
 ### Connection string handling
+
 - Encrypted at rest in SQLite using app secret (from `.env`)
 - Never logged, never returned in API responses
 - Only decrypted in memory when connecting to prod for sync
@@ -405,6 +439,7 @@ The Express server selects how to serve UI based on environment:
 Auto-detection flags fields as "recommended to hide" based on field name patterns:
 
 **High confidence** (pre-set to hidden):
+
 - email, e_mail, email_address
 - ssn, social_security, sin, tax_id, national_id
 - password, passwd, pass_hash, pwd
@@ -415,6 +450,7 @@ Auto-detection flags fields as "recommended to hide" based on field name pattern
 - ip_address, ip, user_ip, client_ip
 
 **Medium confidence** (pre-set to hidden):
+
 - first_name, last_name, full_name, name, username, display_name
 - api_key, secret, token, auth_token, access_token, refresh_token
 - bank_account, iban, routing, swift
@@ -422,6 +458,7 @@ Auto-detection flags fields as "recommended to hide" based on field name pattern
 - lat, lng, latitude, longitude, location, geo
 
 **Low confidence** (flagged with warning, left visible by default):
+
 - avatar, photo, image, picture (might contain face data)
 - bio, about, description (might contain PII in text)
 - notes, comments, memo (might contain PII in text)
@@ -432,21 +469,29 @@ Auto-detection flags fields as "recommended to hide" based on field name pattern
 
 ```
 askdb/
-├── pnpm-workspace.yaml
+├── pnpm-workspace.yaml           # workspaces: server, ui, cli, packages/*
 ├── tsconfig.base.json
-├── package.json                  # Root workspace scripts
+├── package.json                  # root scripts: dev, build, start, typecheck, test
+├── Dockerfile                    # multi-stage: deps → build → runtime
+├── docker-compose.yml            # one-command self-host (mounts /var/run/docker.sock)
+├── .env.example                  # documented env vars
 ├── scripts/
-│   └── dev-runner.ts             # Dev orchestration (watch + restart)
-├── server/                       # @askdb/server — Express API
+│   └── dev-runner.ts             # zero-dep orchestrator: spawns server + mcp with prefixed logs
+├── docker/
+│   └── entrypoint.sh             # runtime entrypoint (spawns server + mcp under tini)
+├── server/                       # @askdb/server — Express API + UI host
 │   └── src/
-│       ├── index.ts              # Entry: Express + Vite middleware / static serving
+│       ├── index.ts              # Entry: Express + uiMode (vite-dev | static | none)
 │       ├── routes/               # API routes (connections, keys, audit, auth)
-│       └── lib/                  # Server-only (auth session, etc.)
+│       └── lib/                  # Server-only (better-auth wiring, etc.)
 ├── ui/                           # @askdb/ui — Vite React SPA
 │   └── src/
 │       ├── pages/                # React Router pages
 │       ├── components/           # shadcn + custom components
 │       └── lib/                  # Auth client, utils
+├── cli/                          # @askdb/cli — askdb CLI (commander)
+│   └── src/
+│       └── commands/             # auth, connections, schema, tables, memory
 ├── packages/
 │   ├── shared/                   # @askdb/shared — DB schema, adapters, crypto
 │   │   └── src/
@@ -457,19 +502,28 @@ askdb/
 │   │       ├── pii/              # PII detection patterns
 │   │       ├── memory/           # Query pattern extraction
 │   │       └── schema-summary/   # Schema markdown for agents
-│   ├── mcp-server/               # @askdb/mcp-server — standalone MCP
-│   │   └── src/server.ts
-│   └── cli/                      # askdb-cli — CLI tool
-│       └── src/
-├── data/                         # SQLite DB (shared via DATABASE_PATH)
-└── docker/                       # Dockerfile, docker-compose, install script
+│   └── mcp-server/               # @askdb/mcp-server — standalone MCP (Streamable HTTP)
+│       └── src/index.ts
+└── data/                         # SQLite DB (gitignored, mounted as volume in prod)
 ```
+
+### Run modes
+
+**Dev** — `pnpm dev`
+The dev-runner spawns server (with `UI_DEV_MIDDLEWARE=1`, Vite in middleware mode) + mcp-server. Single port `3100` for UI + API, `3001` for MCP. Both auto-restart on file changes via `tsx watch`.
+
+**Prod (local)** — `pnpm build && pnpm start & pnpm start:mcp &`
+Built artifacts run via Express. Server serves `ui/dist/` statically (`SERVE_UI=1`).
+
+**Prod (Docker)** — `docker compose up -d`
+Multi-stage image, single container runs server + mcp via `tini` + entrypoint. SQLite persisted to `askdb-data` named volume. Mounts host docker socket so dockerode can spawn sandbox MongoDB containers.
 
 ---
 
 ## MVP Scope
 
 ### Phase 1: Core Engine
+
 - Project scaffolding (Vite React + Express + shadcn + Drizzle + SQLite)
 - Database adapter interface
 - MongoDB adapter (dump/restore via mongodump/mongorestore)
@@ -483,6 +537,7 @@ askdb/
 - Connection string encryption
 
 ### Phase 2: Dashboard
+
 - `curl | bash` installer
 - First-run setup page (create admin account)
 - Auth (email/password, JWT)
@@ -495,12 +550,14 @@ askdb/
 - Manual sync trigger + status
 
 ### Phase 3: Polish & Launch
+
 - README for GitHub repo
 - Basic rate limiting on MCP
 - Error handling polish
 - Example configs
 
 ### Post-MVP Backlog
+
 - Postgres adapter
 - MySQL adapter
 - Multi-user / team management / roles
@@ -517,11 +574,13 @@ askdb/
 ## Launch Plan
 
 ### Pre-launch
+
 1. Build MVP
 2. Dogfood internally
 3. 3-5 beta users from Berlin startup network
 
 ### Launch Week
+
 1. Ship GitHub repo with clean README
 2. "Show HN: Give AI agents safe access to your MongoDB" post
 3. Twitter/X thread showing 5-minute setup
@@ -529,6 +588,7 @@ askdb/
 5. Reddit posts (r/selfhosted, r/ChatGPT, r/ClaudeAI)
 
 ### Success Metrics (3 months)
+
 - 500+ GitHub stars
 - 50+ self-hosted installs
 - Listed in Claude + ChatGPT app directories
