@@ -39,6 +39,7 @@ RUN pnpm -r build
 
 
 FROM node:22-bookworm-slim AS runtime
+ARG MONGO_TOOLS_VERSION=100.10.0
 ENV NODE_ENV=production \
     PNPM_HOME=/root/.local/share/pnpm \
     PATH=/root/.local/share/pnpm:$PATH \
@@ -46,11 +47,23 @@ ENV NODE_ENV=production \
     MCP_PORT=3001 \
     SERVE_UI=1 \
     DATABASE_PATH=/app/data/askdb.db
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates tini \
- && rm -rf /var/lib/apt/lists/* \
- && corepack enable \
- && corepack prepare pnpm@10.33.0 --activate
+# Install runtime deps + mongodb-database-tools (mongodump/mongorestore) used by the sync pipeline.
+# The ubuntu2204 .deb works on bookworm because the bundled binaries are mostly self-contained Go.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates tini curl; \
+    ARCH=$(dpkg --print-architecture); \
+    case "$ARCH" in \
+      amd64) MTARCH=x86_64 ;; \
+      arm64) MTARCH=arm64 ;; \
+      *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-ubuntu2204-${MTARCH}-${MONGO_TOOLS_VERSION}.deb" -o /tmp/mdb-tools.deb; \
+    apt-get install -y --no-install-recommends /tmp/mdb-tools.deb; \
+    rm /tmp/mdb-tools.deb; \
+    rm -rf /var/lib/apt/lists/*; \
+    corepack enable; \
+    corepack prepare pnpm@10.33.0 --activate
 WORKDIR /app
 
 # Copy built artifacts and node_modules from the build stage.
