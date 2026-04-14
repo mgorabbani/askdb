@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -68,8 +68,13 @@ export default function KeysPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">API Keys</h1>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">API Keys</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Create and manage keys used to authenticate the MCP server.
+          </p>
+        </div>
         <Dialog
           open={dialogOpen}
           onOpenChange={(open) => {
@@ -95,7 +100,7 @@ export default function KeysPage() {
 
             {newKey ? (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 rounded-md bg-muted p-3">
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/40 p-3">
                   <code className="flex-1 break-all text-sm">{newKey}</code>
                   <Button variant="ghost" size="sm" onClick={copyKey}>
                     {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -104,7 +109,7 @@ export default function KeysPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                <div>
+                <div className="space-y-1.5">
                   <label className="text-sm font-medium">Label (optional)</label>
                   <Input
                     placeholder="e.g. Claude Desktop"
@@ -123,35 +128,59 @@ export default function KeysPage() {
 
       {keys.length === 0 ? (
         <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Key className="h-12 w-12 text-muted-foreground/50" />
-            <p className="mt-4 text-muted-foreground">No API keys yet.</p>
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Key className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">No API keys yet</p>
+              <p className="text-xs text-muted-foreground">
+                Create your first key to start using the MCP server.
+              </p>
+            </div>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {keys.map((key) => (
-            <Card key={key.id}>
-              <CardHeader className="flex flex-row items-center justify-between py-3">
-                <div>
-                  <CardTitle className="font-mono text-sm">{key.prefix}</CardTitle>
-                  <p className="text-xs text-muted-foreground">
-                    {key.label && `${key.label} · `}
-                    Created {new Date(key.createdAt).toLocaleDateString()}
+        <Card className="overflow-hidden p-0">
+          <ul className="divide-y">
+            {keys.map((key) => (
+              <li
+                key={key.id}
+                className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/40"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Key className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <code className="truncate font-mono text-sm">{key.prefix}…</code>
+                    {key.label && (
+                      <span className="rounded-full border bg-muted/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {key.label}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Created {new Date(key.createdAt).toLocaleDateString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
                   </p>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => revokeKey(key.id)}
-                  className="text-destructive hover:text-destructive"
+                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  aria-label={`Revoke ${key.prefix}`}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
-              </CardHeader>
-            </Card>
-          ))}
-        </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
     </div>
   );

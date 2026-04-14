@@ -3,7 +3,7 @@ import { useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronDown, ChevronRight, Eye, EyeOff, ShieldAlert, RefreshCw, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ShieldAlert, RefreshCw, Loader2 } from "lucide-react";
 
 interface SchemaColumn {
   id: string;
@@ -184,16 +184,68 @@ export default function SchemaBrowserPage() {
     return a.isVisible ? -1 : 1;
   });
 
+  const visibleCount = tables.filter((t) => t.isVisible).length;
+  const piiCandidates = tables.reduce(
+    (n, t) =>
+      n +
+      t.columns.filter(
+        (c) => (c.piiConfidence === "HIGH" || c.piiConfidence === "MEDIUM") && c.isVisible
+      ).length,
+    0
+  );
+
+  function hideAllPii() {
+    tables.forEach((t) => {
+      t.columns.forEach((c) => {
+        if ((c.piiConfidence === "HIGH" || c.piiConfidence === "MEDIUM") && c.isVisible) {
+          toggleColumnVisibility(c.id, t.id, true);
+        }
+      });
+    });
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Schema Browser</h1>
-        <div className="flex items-center gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Schema Browser</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {tables.length} collections · {visibleCount} visible to the agent
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={triggerSync} disabled={syncing}>
+            {syncing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            {syncing ? "Syncing..." : "Sync Now"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={hideAllPii}
+            disabled={piiCandidates === 0}
+          >
+            <ShieldAlert className="mr-2 h-4 w-4" />
+            Hide PII
+            {piiCandidates > 0 && (
+              <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]">
+                {piiCandidates}
+              </Badge>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {(syncStatus?.sandbox || syncStatus) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 px-4 py-2.5 text-xs">
           {syncStatus?.sandbox && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-muted-foreground">
               <span
-                className={`inline-block h-2 w-2 rounded-full ${
-                  syncStatus.sandbox.running ? "bg-green-500" : "bg-red-500"
+                className={`inline-block h-1.5 w-1.5 rounded-full ${
+                  syncStatus.sandbox.running ? "bg-emerald-500" : "bg-red-500"
                 }`}
               />
               {syncStatus.sandbox.running ? "Container healthy" : "Container down"}
@@ -201,107 +253,96 @@ export default function SchemaBrowserPage() {
           )}
           {syncStatus && <SyncStatusBadge status={syncStatus.syncStatus} />}
           {syncStatus?.lastSyncAt && (
-            <span className="text-xs text-muted-foreground">
-              Last sync: {new Date(syncStatus.lastSyncAt).toLocaleString()}
+            <span className="text-muted-foreground">
+              Last sync {new Date(syncStatus.lastSyncAt).toLocaleString()}
             </span>
           )}
-          <Button variant="outline" size="sm" onClick={triggerSync} disabled={syncing}>
-            {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            {syncing ? "Syncing..." : "Sync Now"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              tables.forEach((t) => {
-                t.columns.forEach((c) => {
-                  if ((c.piiConfidence === "HIGH" || c.piiConfidence === "MEDIUM") && c.isVisible) {
-                    toggleColumnVisibility(c.id, t.id, true);
-                  }
-                });
-              });
-            }}
-          >
-            <ShieldAlert className="mr-2 h-4 w-4" />
-            Hide All PII
-          </Button>
         </div>
-      </div>
+      )}
 
-      <div className="space-y-2">
-        {sorted.map((table) => (
-          <Card key={table.id} className={table.isVisible ? "" : "opacity-60"}>
-            <CardHeader className="cursor-pointer py-3" onClick={() => toggleExpand(table.id)}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {expanded.has(table.id) ? (
-                    <ChevronDown className="h-4 w-4" />
+      <Card className="overflow-hidden p-0">
+        <ul className="divide-y">
+          {sorted.map((table) => {
+            const isOpen = expanded.has(table.id);
+            return (
+              <li key={table.id} className={table.isVisible ? "" : "opacity-60"}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted/40"
+                  onClick={() => toggleExpand(table.id)}
+                >
+                  {isOpen ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
                   ) : (
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   )}
-                  <CardTitle className="text-sm font-medium">{table.name}</CardTitle>
-                  <Badge variant="secondary" className="text-xs">
+                  <span className="truncate text-sm font-medium">{table.name}</span>
+                  <Badge variant="secondary" className="font-normal">
                     {table.docCount.toLocaleString()} docs
                   </Badge>
-                </div>
-                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                  {table.isVisible ? (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <Switch
-                    checked={table.isVisible}
-                    onCheckedChange={() => toggleTableVisibility(table.id, table.isVisible)}
-                  />
-                </div>
-              </div>
-            </CardHeader>
+                  <div
+                    className="ml-auto flex items-center"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                  >
+                    <Switch
+                      checked={table.isVisible}
+                      onCheckedChange={() => toggleTableVisibility(table.id, table.isVisible)}
+                    />
+                  </div>
+                </button>
 
-            {expanded.has(table.id) && (
-              <CardContent className="pt-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Field</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Sample</TableHead>
-                      <TableHead>PII</TableHead>
-                      <TableHead className="text-right">Visible</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {table.columns.map((col) => (
-                      <TableRow key={col.id} className={col.isVisible ? "" : "opacity-50"}>
-                        <TableCell className="font-mono text-sm">{col.name}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {col.fieldType}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
-                          {col.sampleValue || "—"}
-                        </TableCell>
-                        <TableCell>
-                          <PiiBadge confidence={col.piiConfidence} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Switch
-                            checked={col.isVisible}
-                            onCheckedChange={() =>
-                              toggleColumnVisibility(col.id, table.id, col.isVisible)
-                            }
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            )}
-          </Card>
-        ))}
-      </div>
+                {isOpen && (
+                  <div className="border-t bg-muted/20 px-5 py-3">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="h-8">Field</TableHead>
+                          <TableHead className="h-8">Type</TableHead>
+                          <TableHead className="h-8">Sample</TableHead>
+                          <TableHead className="h-8">PII</TableHead>
+                          <TableHead className="h-8 text-right">Visible</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {table.columns.map((col) => (
+                          <TableRow
+                            key={col.id}
+                            className={col.isVisible ? "" : "opacity-50"}
+                          >
+                            <TableCell className="font-mono text-xs">{col.name}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="font-mono text-[10px]">
+                                {col.fieldType}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[240px] truncate text-xs text-muted-foreground">
+                              {col.sampleValue || "—"}
+                            </TableCell>
+                            <TableCell>
+                              <PiiBadge confidence={col.piiConfidence} />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Switch
+                                checked={col.isVisible}
+                                onCheckedChange={() =>
+                                  toggleColumnVisibility(col.id, table.id, col.isVisible)
+                                }
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
     </div>
   );
 }

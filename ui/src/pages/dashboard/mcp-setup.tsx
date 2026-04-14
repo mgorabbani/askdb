@@ -142,92 +142,110 @@ export default function McpSetupPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">MCP Setup</h1>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">MCP Setup</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Connect askdb to your MCP-compatible client with one of the configs below.
+        </p>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Connection Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <CopyField label="MCP Endpoint" value={mcpUrl} />
-          <CopyField label="Transport" value="streamable-http" />
-          <div>
-            <p className="mb-2 text-xs font-medium text-muted-foreground">API Key</p>
-            {keys.length > 1 ? (
-              <div className="space-y-2">
-                {keys.map((k) => (
-                  <div key={k.id} className="flex items-center justify-between rounded-md bg-muted p-3">
-                    <div>
-                      <code className="text-sm">{k.prefix}...</code>
-                      {k.label && <span className="ml-2 text-xs text-muted-foreground">{k.label}</span>}
-                    </div>
-                    <Button
-                      variant={selectedKey === k.prefix ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSelectedKey(k.prefix)}
+      <div className="grid gap-6 lg:grid-cols-5">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Connection Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <CopyField label="MCP Endpoint" value={mcpUrl} />
+            <CopyField label="Transport" value="streamable-http" />
+            <div>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">API Key</p>
+              {keys.length > 1 ? (
+                <div className="space-y-2">
+                  {keys.map((k) => (
+                    <div
+                      key={k.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border bg-muted/40 p-3"
                     >
-                      {selectedKey === k.prefix ? "Selected" : "Use this"}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : keys[0] ? (
-              <div className="flex items-center justify-between rounded-md bg-muted p-3">
-                <code className="text-sm">{keys[0].prefix}...</code>
-                {keys[0].label && <span className="text-xs text-muted-foreground">{keys[0].label}</span>}
-              </div>
-            ) : null}
-            <p className="mt-2 text-xs text-muted-foreground">
-              Replace <code>{keyPlaceholder}</code> with your full API key (shown once at creation).{" "}
-              <Link to="/dashboard/keys" className="inline-flex items-center gap-1 underline">
-                Manage keys <ExternalLink className="h-3 w-3" />
-              </Link>
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+                      <div className="min-w-0">
+                        <code className="truncate text-sm">{k.prefix}…</code>
+                        {k.label && (
+                          <span className="ml-2 text-xs text-muted-foreground">{k.label}</span>
+                        )}
+                      </div>
+                      <Button
+                        variant={selectedKey === k.prefix ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setSelectedKey(k.prefix)}
+                      >
+                        {selectedKey === k.prefix ? "Selected" : "Use this"}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : keys[0] ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/40 p-3">
+                  <code className="truncate text-sm">{keys[0].prefix}…</code>
+                  {keys[0].label && (
+                    <span className="shrink-0 text-xs text-muted-foreground">{keys[0].label}</span>
+                  )}
+                </div>
+              ) : null}
+              <p className="mt-2 text-xs text-muted-foreground">
+                Replace <code className="rounded bg-muted px-1 py-0.5">{keyPlaceholder}</code> with
+                your full key (shown once at creation).{" "}
+                <Link
+                  to="/dashboard/keys"
+                  className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  Manage keys <ExternalLink className="h-3 w-3" />
+                </Link>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Copy-Paste Configuration</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue={0}>
-            <TabsList className="flex-wrap">
-              {Object.keys(configs).map((name, i) => (
-                <TabsTrigger key={name} value={i}>
-                  {name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            {Object.entries(configs).map(([name, { description, config }], i) => (
-              <TabsContent key={name} value={i}>
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs text-muted-foreground">{description}</p>
-                  <div className="relative">
-                    <pre className="overflow-x-auto rounded-md bg-muted p-4 font-mono text-xs leading-relaxed">
-                      {config}
-                    </pre>
-                    <div className="absolute right-2 top-2">
-                      <CopyButton text={config} />
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle className="text-base">Copy-Paste Configuration</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue={0}>
+              <TabsList className="flex-wrap">
+                {Object.keys(configs).map((name, i) => (
+                  <TabsTrigger key={name} value={i}>
+                    {name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {Object.entries(configs).map(([name, { description, config }], i) => (
+                <TabsContent key={name} value={i}>
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                    <div className="relative">
+                      <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-4 font-mono text-xs leading-relaxed">
+                        {config}
+                      </pre>
+                      <div className="absolute right-2 top-2">
+                        <CopyButton text={config} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </TabsContent>
-            ))}
-          </Tabs>
-        </CardContent>
-      </Card>
+                </TabsContent>
+              ))}
+            </Tabs>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
 
 function CopyField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between rounded-md bg-muted p-3">
-      <div>
+    <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/40 p-3">
+      <div className="min-w-0">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <code className="text-sm">{value}</code>
+        <code className="truncate text-sm">{value}</code>
       </div>
       <CopyButton text={value} />
     </div>
