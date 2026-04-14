@@ -13,6 +13,12 @@ const VOLUME_PREFIX = "askdb-data-";
 const isInDocker = existsSync("/.dockerenv");
 const MONGO_HOST = isInDocker ? "host.docker.internal" : "localhost";
 
+// Mongo cold start (especially on a fresh VPS pulling the image) can take 20-40s.
+const READY_TIMEOUT_SECONDS = parseInt(
+  process.env.SANDBOX_READY_TIMEOUT_SECONDS ?? "60",
+  10,
+);
+
 export interface SandboxInfo {
   containerId: string;
   port: number;
@@ -28,10 +34,10 @@ export class SandboxManager {
       if (!existing.running) {
         const container = docker.getContainer(`${CONTAINER_PREFIX}${connectionId}`);
         await container.start();
-        await this.waitForReady(existing.port, 30);
+        await this.waitForReady(existing.port, READY_TIMEOUT_SECONDS);
         return { ...existing, running: true };
       }
-      await this.waitForReady(existing.port, 30);
+      await this.waitForReady(existing.port, READY_TIMEOUT_SECONDS);
       return existing;
     }
 
@@ -62,7 +68,7 @@ export class SandboxManager {
     await container.start();
 
     // Wait for MongoDB to be ready
-    await this.waitForReady(port, 30);
+    await this.waitForReady(port, READY_TIMEOUT_SECONDS);
 
     return {
       containerId: container.id,
