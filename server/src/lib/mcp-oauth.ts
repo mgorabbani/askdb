@@ -65,14 +65,19 @@ export function createMcpOAuthRouter(): RequestHandler {
   const provider: OAuthServerProvider = {
     clientsStore: {
       async getClient(clientId) {
-        return getOAuthClient(db, clientId);
+        const client = getOAuthClient(db, clientId);
+        console.log(`[mcp-oauth] getClient(${clientId}) -> ${client ? "hit" : "miss"}`);
+        return client;
       },
       async registerClient(client) {
-        return storeOAuthClient(db, normalizeClientRecord(client as OAuthClientRecord));
+        const record = normalizeClientRecord(client as OAuthClientRecord);
+        console.log(`[mcp-oauth] registerClient id=${record.client_id} name=${record.client_name ?? "-"}`);
+        return storeOAuthClient(db, record);
       },
     },
 
     async authorize(client, params, res) {
+      console.log(`[mcp-oauth] authorize method=${(res.req as Request).method} client=${client.client_id} scopes=${JSON.stringify(params.scopes)} resource=${params.resource?.toString() ?? "-"}`);
       const req = res.req as Request;
       const session = await getSession(req);
 
@@ -146,18 +151,28 @@ export function createMcpOAuthRouter(): RequestHandler {
     },
 
     async challengeForAuthorizationCode(client, authorizationCode) {
-      return getAuthorizationCodeChallenge(db, client.client_id, authorizationCode);
+      try {
+        const challenge = getAuthorizationCodeChallenge(db, client.client_id, authorizationCode);
+        console.log(`[mcp-oauth] challengeForAuthorizationCode client=${client.client_id} ok`);
+        return challenge;
+      } catch (error) {
+        console.error(`[mcp-oauth] challengeForAuthorizationCode FAILED client=${client.client_id}:`, error);
+        throw error;
+      }
     },
 
     async exchangeAuthorizationCode(client, authorizationCode, _codeVerifier, redirectUri, resource) {
       try {
-        return exchangeAuthorizationCodeGrant(db, {
+        const result = exchangeAuthorizationCodeGrant(db, {
           client: normalizeClientRecord(client),
           code: authorizationCode,
           redirectUri,
           resource: resource?.toString(),
         });
+        console.log(`[mcp-oauth] exchangeAuthorizationCode client=${client.client_id} redirectUri=${redirectUri ?? "-"} resource=${resource?.toString() ?? "-"} ok`);
+        return result;
       } catch (error) {
+        console.error(`[mcp-oauth] exchangeAuthorizationCode FAILED client=${client.client_id} redirectUri=${redirectUri ?? "-"} resource=${resource?.toString() ?? "-"}:`, error);
         throw new InvalidGrantError(
           error instanceof Error ? error.message : "Invalid authorization code"
         );
@@ -166,13 +181,16 @@ export function createMcpOAuthRouter(): RequestHandler {
 
     async exchangeRefreshToken(client, refreshToken, scopes, resource) {
       try {
-        return exchangeRefreshTokenGrant(db, {
+        const result = exchangeRefreshTokenGrant(db, {
           client: normalizeClientRecord(client),
           refreshToken,
           requestedResource: resource?.toString(),
           requestedScopes: scopes,
         });
+        console.log(`[mcp-oauth] exchangeRefreshToken client=${client.client_id} ok`);
+        return result;
       } catch (error) {
+        console.error(`[mcp-oauth] exchangeRefreshToken FAILED client=${client.client_id}:`, error);
         const message = error instanceof Error ? error.message : "Invalid refresh token";
         if (message.includes("scope")) {
           throw new InvalidScopeError(message);
@@ -187,8 +205,10 @@ export function createMcpOAuthRouter(): RequestHandler {
     async verifyAccessToken(token) {
       const verified = verifyOAuthAccessToken(db, token);
       if (!verified) {
+        console.warn(`[mcp-oauth] verifyAccessToken miss tokenPrefix=${token.slice(0, 10)}`);
         throw new Error("Invalid or expired token");
       }
+      console.log(`[mcp-oauth] verifyAccessToken ok client=${verified.clientId} user=${verified.userId}`);
 
       return {
         token,

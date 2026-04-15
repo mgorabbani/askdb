@@ -162,8 +162,10 @@ const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(mcpPublicUrl);
 
 const tokenVerifier = {
   async verifyAccessToken(token: string) {
+    const tokenPrefix = token.slice(0, 10);
     const legacyAuth = authenticateApiKeyToken(token);
     if (legacyAuth) {
+      console.log(`[mcp] verifyAccessToken api_key prefix=${tokenPrefix} ok user=${legacyAuth.userId}`);
       return {
         token,
         clientId: legacyAuth.clientId,
@@ -176,13 +178,16 @@ const tokenVerifier = {
 
     const verified = verifyOAuthAccessToken(db, token);
     if (!verified) {
+      console.warn(`[mcp] verifyAccessToken oauth MISS prefix=${tokenPrefix}`);
       throw new InvalidTokenError("Invalid or expired token");
     }
 
     const conn = getConnectionContext(verified.connectionId);
     if (!conn) {
+      console.warn(`[mcp] verifyAccessToken oauth NO_CONNECTION user=${verified.userId} connectionId=${verified.connectionId}`);
       throw new InvalidTokenError("No active sandbox connection found for this token");
     }
+    console.log(`[mcp] verifyAccessToken oauth ok user=${verified.userId} client=${verified.clientId} resource=${verified.resource}`);
 
     const auth: AuthContext = {
       userId: verified.userId,
