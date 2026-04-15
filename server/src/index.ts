@@ -38,6 +38,15 @@ async function main() {
   // X-Forwarded-For instead of throwing ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
   app.set("trust proxy", 1);
 
+  app.use((req, _res, next) => {
+    if (req.path.startsWith("/mcp") || req.path.startsWith("/authorize") || req.path.startsWith("/token") || req.path.startsWith("/register") || req.path.startsWith("/revoke") || req.path.startsWith("/.well-known")) {
+      const authHeader = req.headers.authorization;
+      const authSummary = authHeader ? `${authHeader.split(" ")[0]} ${authHeader.slice(-8)}` : "-";
+      console.log(`[server] ${req.method} ${req.originalUrl} auth=${authSummary}`);
+    }
+    next();
+  });
+
   // Body parsing — note better-auth needs the raw stream, so mount auth BEFORE json()
   app.use("/api/auth", authRouter);
   app.use(createMcpOAuthRouter());

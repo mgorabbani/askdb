@@ -1241,6 +1241,14 @@ function createMcpServer(auth: AuthContext): McpServer {
 
 const app = express();
 app.set("trust proxy", 1);
+app.use((req, _res, next) => {
+  const authHeader = req.headers.authorization;
+  const authSummary = authHeader
+    ? `${authHeader.split(" ")[0]} ${authHeader.slice(-8)}`
+    : "-";
+  console.log(`[mcp] ${req.method} ${req.originalUrl} auth=${authSummary}`);
+  next();
+});
 const oauthMetadata = {
   issuer: oauthIssuerUrl.href,
   authorization_endpoint: new URL("/authorize", oauthIssuerUrl).href,
