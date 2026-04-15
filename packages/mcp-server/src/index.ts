@@ -1309,8 +1309,13 @@ function getRequestAuthContext(req: express.Request): AuthContext | null {
   };
 }
 
-// POST /mcp — main MCP endpoint
-app.post("/mcp", authMiddleware, async (req, res) => {
+// POST /mcp — main MCP endpoint. Also accept "/" because Coolify's Traefik
+// path-based routing (https://askdb.talt.ai/mcp → :3001) strips the /mcp
+// prefix before forwarding, so inside the container the request arrives as
+// POST / on port 3001. Local dev still works because clients hit
+// http://localhost:3001/mcp directly.
+const MCP_ENDPOINT_PATHS = ["/mcp", "/"];
+app.post(MCP_ENDPOINT_PATHS, authMiddleware, async (req, res) => {
   const auth = getRequestAuthContext(req);
   if (!auth) {
     res.status(401).json({
@@ -1375,7 +1380,7 @@ app.post("/mcp", authMiddleware, async (req, res) => {
 });
 
 // GET /mcp — SSE stream
-app.get("/mcp", authMiddleware, async (req, res) => {
+app.get(MCP_ENDPOINT_PATHS, authMiddleware, async (req, res) => {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   if (!sessionId || !transports[sessionId]) {
     res.status(400).send("Invalid or missing session ID");
@@ -1392,7 +1397,7 @@ app.get("/mcp", authMiddleware, async (req, res) => {
 });
 
 // DELETE /mcp — session termination
-app.delete("/mcp", authMiddleware, async (req, res) => {
+app.delete(MCP_ENDPOINT_PATHS, authMiddleware, async (req, res) => {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   if (!sessionId || !transports[sessionId]) {
     res.status(400).send("Invalid or missing session ID");
