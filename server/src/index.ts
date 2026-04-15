@@ -33,6 +33,11 @@ const PORT = parseInt(process.env.PORT ?? "3100", 10);
 async function main() {
   const app = express();
 
+  // Behind Coolify/Traefik (or any reverse proxy). Required so express-rate-limit
+  // (used by the MCP SDK auth handlers) can read the real client IP from
+  // X-Forwarded-For instead of throwing ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+  app.set("trust proxy", 1);
+
   // Body parsing — note better-auth needs the raw stream, so mount auth BEFORE json()
   app.use("/api/auth", authRouter);
   app.use(createMcpOAuthRouter());

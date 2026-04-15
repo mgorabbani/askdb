@@ -1235,6 +1235,7 @@ function createMcpServer(auth: AuthContext): McpServer {
 // ── Express app + transport management ──────────────────────────────
 
 const app = express();
+app.set("trust proxy", 1);
 const oauthMetadata = {
   issuer: oauthIssuerUrl.href,
   authorization_endpoint: new URL("/authorize", oauthIssuerUrl).href,
