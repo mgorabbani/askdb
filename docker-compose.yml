@@ -31,7 +31,7 @@ services:
       NODE_ENV: production
       PORT: 3100
       SERVE_UI: "1"
-      BETTER_AUTH_URL: https://${DOMAIN}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://${DOMAIN}}
       DATABASE_PATH: /app/data/askdb.db
       DOCKER_HOST: tcp://docker-socket-proxy:2375
     env_file:
@@ -66,8 +66,10 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      # Defaults apply when the caddy profile is not active (e.g. local dev,
+      # proxyless install). install.sh writes real values into .env for caddy.
+      DOMAIN: ${DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@localhost}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -80,7 +82,7 @@ services:
     image: cloudflare/cloudflared:latest
     profiles: ["tunnel"]
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN:-}
     depends_on:
       askdb:
         condition: service_healthy

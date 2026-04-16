@@ -89,12 +89,17 @@ async function main() {
   });
 
   // Tells the UI whether the first-run /setup flow should be shown.
-  // Only reveal setup status to same-origin callers. Anonymous external
-  // probes get a generic 200 so attackers can't tell if an admin exists.
+  // Only reveal setup status to callers from a trusted origin — BETTER_AUTH_URL
+  // or anything in TRUSTED_ORIGINS (comma-separated). Anonymous external probes
+  // get a generic 200 so attackers can't tell if an admin exists.
+  const trustedSetupOrigins = new Set(
+    [process.env.BETTER_AUTH_URL, ...(process.env.TRUSTED_ORIGINS ?? "").split(",")]
+      .map((s) => s?.trim())
+      .filter((s): s is string => !!s)
+  );
   app.get("/api/setup-status", async (req, res) => {
     const origin = req.get("origin");
-    const sameOrigin = typeof origin === "string" && origin === process.env.BETTER_AUTH_URL;
-    if (!sameOrigin) {
+    if (typeof origin !== "string" || !trustedSetupOrigins.has(origin)) {
       res.json({ ok: true });
       return;
     }

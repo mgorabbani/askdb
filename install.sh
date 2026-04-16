@@ -96,9 +96,19 @@ else
     echo "DOMAIN=$DOMAIN"
     echo "ACME_EMAIL=$ACME_EMAIL"
     [ -n "${CF_TUNNEL_TOKEN:-}" ] && echo "CF_TUNNEL_TOKEN=$CF_TUNNEL_TOKEN"
+    # BETTER_AUTH_URL must match the origin the browser actually uses.
+    # The /api/setup-status same-origin check compares against this.
     case "$PROFILE" in
-      caddy|tunnel) echo "TRUSTED_ORIGINS=https://$DOMAIN" ;;
-      proxyless)    echo "TRUSTED_ORIGINS=http://$DOMAIN,https://$DOMAIN" ;;
+      caddy|tunnel)
+        echo "BETTER_AUTH_URL=https://$DOMAIN"
+        echo "TRUSTED_ORIGINS=https://$DOMAIN"
+        ;;
+      proxyless)
+        # User's reverse proxy decides the external scheme/host;
+        # default to http://<host>:3100 which matches the loopback binding.
+        echo "BETTER_AUTH_URL=http://$DOMAIN:3100"
+        echo "TRUSTED_ORIGINS=http://$DOMAIN:3100,https://$DOMAIN"
+        ;;
     esac
   } > .env
 fi

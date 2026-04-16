@@ -279,14 +279,25 @@ Want to kick the tires before pointing a domain at a VPS? This runs askdb on you
 git clone https://github.com/mgorabbani/askdb.git
 cd askdb
 
-# Run with the "proxyless" profile — no Caddy, no TLS, binds to 127.0.0.1:3100
-DOMAIN=localhost ACME_EMAIL=test@example.com COMPOSE_PROFILES=proxyless \
-  docker compose up --build -d
+# Write a local .env — BETTER_AUTH_URL must match the origin your browser
+# uses. TRUSTED_ORIGINS can list both localhost and 127.0.0.1 so either
+# URL works in your browser.
+cat > .env <<EOF
+COMPOSE_PROFILES=proxyless
+DOMAIN=localhost
+BETTER_AUTH_URL=http://localhost:3100
+TRUSTED_ORIGINS=http://localhost:3100,http://127.0.0.1:3100
+EOF
+
+# Build + start with the "proxyless" profile — no Caddy, no TLS, binds to 127.0.0.1:3100
+docker compose up --build -d
 
 # Wait ~45 seconds for the first build + healthcheck, then:
 docker compose ps                   # askdb should show "(healthy)"
-open http://127.0.0.1:3100          # or visit it in your browser
+open http://localhost:3100          # or visit http://127.0.0.1:3100
 ```
+
+The dashboard detects the empty database and redirects you to `/setup` to create the first admin. After signup, subsequent registrations are rejected.
 
 Create an admin account in the dashboard, add a database connection, and try the MCP URL at `http://127.0.0.1:3100/mcp` with a local MCP client (Claude Code / Cursor with a fixed bearer token — remote OAuth flows need HTTPS).
 
