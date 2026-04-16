@@ -226,9 +226,13 @@ Total time on a fresh VPS is 2–3 minutes.
 3. Open ports 80 and 443 on your VPS firewall.
 4. Run the installer above.
 
+### Create your admin account
+
+The first time you open `https://<your-domain>`, the dashboard detects the empty database and redirects you to `/setup` to create the admin account. This is the account you'll use to log in and approve the OAuth prompt when you connect Claude or Cursor &mdash; so do this before the next step. After the first signup, further registrations are rejected.
+
 ### Connect Claude or Cursor
 
-Paste `https://<your-domain>/mcp` into Claude / Cursor as a custom MCP connector. Complete the OAuth approval in your browser when prompted. No API key is needed for remote clients.
+Paste `https://<your-domain>/mcp` into Claude / Cursor as a custom MCP connector. When prompted, complete the OAuth approval in your browser &mdash; you'll log in with the admin account you just created. No API key is needed for remote clients.
 
 ### Alternative install modes
 
