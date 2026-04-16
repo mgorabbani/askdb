@@ -2,8 +2,8 @@
 //
 // Spins up a real MongoDB container, populates two collections, builds a
 // throwaway SQLite DB with a real connection + api key + schema metadata,
-// boots the askdb MCP server as a child process against that DB, and then
-// connects with the official MCP client SDK and calls execute-typescript
+// starts an in-process Express app that mounts the MCP router directly, and
+// then connects with the official MCP client SDK and calls execute-typescript
 // with a real cross-collection question. Asserts the result is correct AND
 // that the hidden field (users.email) does not leak.
 //
@@ -12,17 +12,19 @@
 // Requires Docker.
 
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { execSync } from "node:child_process";
+import type http from "node:http";
 
 import Database from "better-sqlite3";
 import { MongoClient } from "mongodb";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
+import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 
 import { ensureDatabaseSchema } from "@askdb/shared";
 import { generateApiKey } from "@askdb/shared";
@@ -30,11 +32,10 @@ import { generateApiKey } from "@askdb/shared";
 // ── Constants ───────────────────────────────────────────────────────
 
 const MONGO_PORT = 27099;
-const MCP_PORT = 3099;
+const SERVER_PORT = 3099;
 const CONTAINER_NAME = "askdb-codemode-e2e";
 const MONGO_IMAGE = "mongo:7";
 const TEST_DB_NAME = "appdb";
-const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
 
 // ── Tiny logger ─────────────────────────────────────────────────────
 
@@ -318,48 +319,48 @@ function seedSqlite(): SeedSqliteResult {
   };
 }
 
-async function startMcpServer(dbPath: string): Promise<ChildProcess> {
-  log(`spawning MCP server on :${MCP_PORT} with DATABASE_PATH=${dbPath}`);
-  const proc = spawn(
-    "node",
-    ["--import", "tsx", "packages/mcp-server/src/index.ts"],
-    {
-      cwd: REPO_ROOT,
-      env: {
-        ...process.env,
-        DATABASE_PATH: dbPath,
-        MCP_PORT: String(MCP_PORT),
-        ASKDB_MCP_DISABLED_TOOLS: "",
-        // Avoid clobbering the user's real .env: point at a non-existent file.
-        DOTENV_CONFIG_PATH: "/dev/null",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    }
+interface InProcessServer {
+  httpServer: http.Server;
+  onShutdown: () => Promise<void>;
+}
+
+async function startMcpServer(dbPath: string): Promise<InProcessServer> {
+  log(`starting in-process MCP server on :${SERVER_PORT} with DATABASE_PATH=${dbPath}`);
+
+  // Must be set before any @askdb/shared db access — the db singleton reads
+  // DATABASE_PATH lazily on first property access.
+  process.env.DATABASE_PATH = dbPath;
+  process.env.PORT = String(SERVER_PORT);
+  process.env.ASKDB_MCP_DISABLED_TOOLS = "";
+
+  // Dynamically import after setting env so the lazy db singleton picks up the
+  // correct DATABASE_PATH. Static imports at the top of this file don't touch
+  // the db, so this ordering is safe.
+  const express = (await import("express")).default;
+  const { createMcpRouter, createMcpTokenVerifier } = await import("@askdb/mcp-server");
+  const { getMcpPublicUrl } = await import("@askdb/shared");
+
+  const app = express();
+  const mcpPublicUrl = getMcpPublicUrl();
+  const tokenVerifier = createMcpTokenVerifier({ mcpPublicUrl });
+  const resourceMetadataUrl = new URL(getOAuthProtectedResourceMetadataUrl(mcpPublicUrl));
+  const { router, onShutdown } = createMcpRouter();
+
+  app.use(
+    "/mcp",
+    requireBearerAuth({ verifier: tokenVerifier, resourceMetadataUrl: resourceMetadataUrl.href }),
+    express.json({ limit: "4mb" }),
+    router
   );
 
-  let resolved = false;
-  await new Promise<void>((resolve, reject) => {
-    const onLine = (chunk: Buffer) => {
-      const s = chunk.toString();
-      process.stdout.write(`[mcp] ${s}`);
-      if (!resolved && s.includes("listening on port")) {
-        resolved = true;
-        resolve();
-      }
-    };
-    proc.stdout?.on("data", onLine);
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      process.stderr.write(`[mcp:err] ${chunk}`);
+  const httpServer = await new Promise<http.Server>((resolve) => {
+    const srv = app.listen(SERVER_PORT, () => {
+      log(`in-process MCP server listening on :${SERVER_PORT}`);
+      resolve(srv);
     });
-    proc.once("exit", (code) => {
-      if (!resolved) reject(new Error(`MCP server exited early with code ${code}`));
-    });
-    setTimeout(() => {
-      if (!resolved) reject(new Error("MCP server did not become ready in 30s"));
-    }, 30_000);
   });
 
-  return proc;
+  return { httpServer, onShutdown };
 }
 
 // ── Wire logger ─────────────────────────────────────────────────────
@@ -455,7 +456,7 @@ const loggingFetch: typeof fetch = async (input, init) => {
 
 async function runQueryViaMcp(fullKey: string): Promise<unknown> {
   const transport = new StreamableHTTPClientTransport(
-    new URL(`http://localhost:${MCP_PORT}/mcp`),
+    new URL(`http://localhost:${SERVER_PORT}/mcp`),
     {
       requestInit: {
         headers: { Authorization: `Bearer ${fullKey}` },
@@ -561,7 +562,7 @@ function assertReply(reply: CodeModeReply): void {
 // ── Main ─────────────────────────────────────────────────────────────
 
 async function main() {
-  let mcpProc: ChildProcess | null = null;
+  let inProcServer: InProcessServer | null = null;
   let sqliteSeed: SeedSqliteResult | null = null;
 
   try {
@@ -569,10 +570,7 @@ async function main() {
     await dockerStartMongo();
     await seedMongo();
     sqliteSeed = seedSqlite();
-    mcpProc = await startMcpServer(sqliteSeed.dbPath);
-
-    // Small grace so the express handler is fully bound after the listen log.
-    await delay(300);
+    inProcServer = await startMcpServer(sqliteSeed.dbPath);
 
     const reply = (await runQueryViaMcp(sqliteSeed.fullKey)) as CodeModeReply;
     assertReply(reply);
@@ -581,10 +579,9 @@ async function main() {
     log("ALL CHECKS PASSED");
     log("");
   } finally {
-    if (mcpProc && !mcpProc.killed) {
-      mcpProc.kill("SIGINT");
-      await delay(200);
-      if (!mcpProc.killed) mcpProc.kill("SIGKILL");
+    if (inProcServer) {
+      await inProcServer.onShutdown();
+      await new Promise<void>((resolve) => inProcServer!.httpServer.close(() => resolve()));
     }
     if (sqliteSeed) sqliteSeed.cleanup();
     await dockerStop();
