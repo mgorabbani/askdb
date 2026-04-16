@@ -173,13 +173,13 @@ Your Prod MongoDB ──> mongodump ──> Sandbox Container
 │                                                   │
 │  ┌──────────────┐       ┌───────────────┐        │
 │  │  Dashboard    │──────>│  SQLite       │        │
-│  │  + API        │       │  (config only) │        │
-│  └──────────────┘       └───────────────┘        │
-│                                                   │
-│  ┌──────────────┐       ┌───────────────┐        │
-│  │  MCP Server  │──────>│  Sandbox      │        │
-│  │  :3001       │       │  MongoDB      │<── clone from prod
-│  └──────────────┘       └───────────────┘        │
+│  │  + API + MCP  │       │  (config only) │        │
+│  │  :3100        │       └───────────────┘        │
+│  └──────────────┘                                 │
+│                          ┌───────────────┐        │
+│                          │  Sandbox      │<── clone from prod
+│                          │  MongoDB      │        │
+│                          └───────────────┘        │
 └─────────────────────────────────────────────────┘
          ^
          | MCP (Streamable HTTP)
@@ -265,12 +265,11 @@ Open `http://localhost:3100`, hit `/setup` once to create the admin user, and yo
 
 ### What the container exposes
 
-| Port   | Purpose                                       | Expose publicly?                  |
-| ------ | --------------------------------------------- | --------------------------------- |
-| `3100` | HTTP API + embedded dashboard UI               | Yes — this is the user-facing port |
-| `3001` | MCP server (Streamable HTTP)                   | Only if AI agents are off-host    |
+| Port   | Purpose                                        | Expose publicly?                   |
+| ------ | ---------------------------------------------- | ---------------------------------- |
+| `3100` | HTTP API + embedded dashboard UI + MCP server  | Yes — this is the only port needed |
 
-If everything (UI, agents, you) lives on the same machine, leave `3001` unmapped — the MCP server is reachable inside the Docker network.
+Everything — UI, API, and `/mcp` — runs on a single port. No secondary port to map or firewall.
 
 ### Required environment
 
@@ -320,7 +319,6 @@ services:
       DATABASE_PATH: /app/data/askdb.db
       SERVE_UI: "1"
       PORT: "3100"
-      MCP_PORT: "3001"
       NODE_ENV: production
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL}
@@ -333,7 +331,7 @@ volumes:
   askdb-data:
 ```
 
-Differences from the bundled `docker-compose.yml`: no `container_name` (the platform manages it), no `env_file` (set env vars through the platform's UI), and no public mapping for `3001`.
+Differences from the bundled `docker-compose.yml`: no `container_name` (the platform manages it), no `env_file` (set env vars through the platform's UI).
 
 Steps:
 
@@ -350,20 +348,11 @@ The same pattern works for Dokploy and Portainer — they all consume the compos
 
 ## Connecting Your AI Agent
 
-### Claude
-
-For Claude web or Claude Desktop remote connectors:
-
-1. Open **Claude → Customize → Connectors**
-2. Add a custom connector
-3. Paste your public MCP URL, for example `https://YOUR_SERVER/mcp`
-4. Complete the OAuth approval flow in your browser
-
-Claude uses OAuth for remote MCP connectors, so you do **not** need to paste an API key header there.
+Claude, Cursor, and any other remote-MCP client connect to `https://<your-domain>/mcp`. Paste that URL as a custom connector and complete the OAuth approval in your browser. No port, no path rewriting, no API key.
 
 ### API Key Clients
 
-For clients that still expect a fixed bearer token header, create an API key in the dashboard, then add it to your AI tool:
+For clients that still expect a fixed bearer token header (e.g. Claude Code or Cursor local configs), create an API key in the dashboard, then add it to your AI tool:
 
 ### Claude Desktop / Claude Code
 
@@ -373,7 +362,7 @@ Add to MCP config:
 {
   "askdb": {
     "type": "streamable-http",
-    "url": "http://YOUR_SERVER:3001/mcp",
+    "url": "https://YOUR_SERVER/mcp",
     "headers": {
       "Authorization": "Bearer ask_sk_YOUR_KEY"
     }
@@ -387,7 +376,7 @@ Add to MCP config:
 {
   "mcpServers": {
     "askdb": {
-      "url": "http://YOUR_SERVER:3001/mcp",
+      "url": "https://YOUR_SERVER/mcp",
       "headers": {
         "Authorization": "Bearer ask_sk_YOUR_KEY"
       }
@@ -440,8 +429,6 @@ These invariants always hold:
 
 ```bash
 pnpm dev              # Full dev (API + UI + file watching)
-pnpm dev:once         # Full dev without file watching
-pnpm dev:mcp          # MCP server only
 pnpm build            # Build all packages
 pnpm typecheck        # Type check all packages
 pnpm db:generate      # Generate DB migration
@@ -458,16 +445,16 @@ The `e2e` script boots a throwaway MongoDB container, seeds two collections, spi
 
 ```
 askdb/
-├── server/              # @askdb/server — Express API + UI host
+├── server/              # @askdb/server — Express API + UI host + MCP endpoint
 ├── ui/                  # @askdb/ui — Vite React SPA
 ├── cli/                 # @askdb/cli — askdb CLI
 ├── packages/
 │   ├── shared/          # @askdb/shared — DB schema, adapters, crypto
-│   └── mcp-server/      # @askdb/mcp-server — standalone MCP
+│   └── mcp-server/      # @askdb/mcp-server — MCP logic (mounted into server)
 ├── scripts/
-│   └── dev-runner.ts    # Zero-dep orchestrator: spawns server + mcp
+│   └── dev-runner.ts    # Zero-dep orchestrator: spawns server + UI watcher
 ├── docker/
-│   └── entrypoint.sh    # Runtime entrypoint (server + mcp under tini)
+│   └── entrypoint.sh    # Runtime entrypoint (single server process under tini)
 ├── Dockerfile           # Multi-stage: deps → build → runtime
 ├── docker-compose.yml   # One-command self-host
 └── data/                # SQLite database (gitignored, mounted as volume in prod)
