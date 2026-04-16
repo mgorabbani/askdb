@@ -50,7 +50,7 @@ ENV NODE_ENV=production \
 # The ubuntu2204 .deb works on bookworm because the bundled binaries are mostly self-contained Go.
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates tini curl; \
+    apt-get install -y --no-install-recommends ca-certificates tini curl wget; \
     ARCH=$(dpkg --print-architecture); \
     case "$ARCH" in \
       amd64) MTARCH=x86_64 ;; \
@@ -72,6 +72,9 @@ COPY --from=build /app /app
 VOLUME ["/app/data"]
 
 EXPOSE 3100
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3100/api/health >/dev/null || exit 1
 
 # tini reaps the single node process spawned by entrypoint.sh.
 COPY docker/entrypoint.sh /usr/local/bin/askdb-entrypoint

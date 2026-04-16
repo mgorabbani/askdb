@@ -1,0 +1,18 @@
+{
+    email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+    encode zstd gzip
+
+    # MCP endpoint (Streamable HTTP; SSE responses must not be buffered)
+    reverse_proxy /mcp* askdb:3100 {
+        flush_interval -1
+        transport http {
+            keepalive 120s
+        }
+    }
+
+    # Everything else (UI, OAuth router, /api/*)
+    reverse_proxy askdb:3100
+}

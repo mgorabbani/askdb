@@ -1,24 +1,64 @@
 services:
   askdb:
     build: .
-    image: askdb:local
-    container_name: askdb
+    image: ghcr.io/expatal/askdb:latest
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3100:3100"   # API + UI + MCP (single port)
+    environment:
+      NODE_ENV: production
+      PORT: 3100
+      SERVE_UI: "1"
+      BETTER_AUTH_URL: https://${DOMAIN}
+      DATABASE_PATH: /app/data/askdb.db
     env_file:
       - .env
-    environment:
-      DATABASE_PATH: /app/data/askdb.db
-      SERVE_UI: "1"
     volumes:
       - askdb-data:/app/data
-      # Required: askdb spawns sandbox MongoDB containers via dockerode.
       - /var/run/docker.sock:/var/run/docker.sock
-    # Required on Linux so the askdb container can reach sibling sandbox
-    # containers via host.docker.internal (auto on Docker Desktop, manual on Linux).
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    expose:
+      - "3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  askdb-proxyless:
+    extends: askdb
+    profiles: ["proxyless"]
+    ports:
+      - "127.0.0.1:3100:3100"
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["caddy"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      askdb:
+        condition: service_healthy
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    depends_on:
+      askdb:
+        condition: service_healthy
 
 volumes:
   askdb-data:
+  caddy-data:
+  caddy-config:
