@@ -19,7 +19,8 @@
     "./memory/extractor": "./src/memory/extractor.ts",
     "./memory/insights": "./src/memory/insights.ts",
     "./schema-summary/generator": "./src/schema-summary/generator.ts",
-    "./test-support/sqlite-fixture": "./src/support/sqlite-fixture.ts"
+    "./test-support/sqlite-fixture": "./src/support/sqlite-fixture.ts",
+    "./mcp/urls": "./src/mcp/urls.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

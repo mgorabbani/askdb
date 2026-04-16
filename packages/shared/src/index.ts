@@ -46,3 +46,4 @@ export {
   generateSchemaMarkdown,
   invalidateGuideCache,
 } from "./schema-summary/generator.js";
+export { getOAuthIssuerUrl, getMcpPublicUrl } from "./mcp/urls.js";

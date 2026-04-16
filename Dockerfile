@@ -6,7 +6,7 @@
 #   base    → node + pnpm + system deps shared by all stages
 #   deps    → install workspace dependencies (cached on lockfile)
 #   build   → compile workspace packages (vite build for ui, tsc for the rest)
-#   runtime → minimal final image: copies built artifacts + runs server + mcp
+#   runtime → minimal final image: copies built artifacts + runs single server
 # ─────────────────────────────────────────────────────────────────────────────
 
 FROM node:22-bookworm-slim AS base
@@ -44,7 +44,6 @@ ENV NODE_ENV=production \
     PNPM_HOME=/root/.local/share/pnpm \
     PATH=/root/.local/share/pnpm:$PATH \
     PORT=3100 \
-    MCP_PORT=3001 \
     SERVE_UI=1 \
     DATABASE_PATH=/app/data/askdb.db
 # Install runtime deps + mongodb-database-tools (mongodump/mongorestore) used by the sync pipeline.
@@ -72,9 +71,9 @@ COPY --from=build /app /app
 # SQLite + future export volume.
 VOLUME ["/app/data"]
 
-EXPOSE 3100 3001
+EXPOSE 3100
 
-# tini = PID 1 reaper; entrypoint script spawns server + mcp.
+# tini reaps the single node process spawned by entrypoint.sh.
 COPY docker/entrypoint.sh /usr/local/bin/askdb-entrypoint
 RUN chmod +x /usr/local/bin/askdb-entrypoint
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/askdb-entrypoint"]

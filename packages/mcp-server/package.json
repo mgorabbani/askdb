@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test 'src/**/*.test.ts'",
     "e2e": "node --import tsx scripts/test-code-mode-e2e.ts"
@@ -13,7 +17,6 @@
   "dependencies": {
     "@askdb/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mongodb": "^7.1.1",
     "quickjs-emscripten": "^0.32.0",

@@ -20,6 +20,13 @@ const { connectionsRouter } = await import("./routes/connections.js");
 const { keysRouter } = await import("./routes/keys.js");
 const { auditRouter } = await import("./routes/audit.js");
 const { startSyncScheduler } = await import("@askdb/shared");
+const { createMcpRouter, createMcpTokenVerifier } = await import("@askdb/mcp-server");
+const { getOAuthProtectedResourceMetadataUrl } = await import(
+  "@modelcontextprotocol/sdk/server/auth/router.js"
+);
+const { requireBearerAuth } = await import(
+  "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js"
+);
 
 type UIMode = "vite-dev" | "static" | "none";
 const uiMode: UIMode = process.env.UI_DEV_MIDDLEWARE === "1"
@@ -38,18 +45,24 @@ async function main() {
   // X-Forwarded-For instead of throwing ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
   app.set("trust proxy", 1);
 
-  app.use((req, _res, next) => {
-    if (req.path.startsWith("/mcp") || req.path.startsWith("/authorize") || req.path.startsWith("/token") || req.path.startsWith("/register") || req.path.startsWith("/revoke") || req.path.startsWith("/.well-known")) {
-      const authHeader = req.headers.authorization;
-      const authSummary = authHeader ? `${authHeader.split(" ")[0]} ${authHeader.slice(-8)}` : "-";
-      console.log(`[server] ${req.method} ${req.originalUrl} auth=${authSummary}`);
-    }
-    next();
-  });
-
   // Body parsing — note better-auth needs the raw stream, so mount auth BEFORE json()
   app.use("/api/auth", authRouter);
   app.use(createMcpOAuthRouter());
+
+  // /mcp — StreamableHTTP transport with bearer auth and scoped JSON parser
+  const mcpPublicUrl = getMcpPublicUrl();
+  const tokenVerifier = createMcpTokenVerifier({ mcpPublicUrl });
+  const resourceMetadataUrl = new URL(
+    getOAuthProtectedResourceMetadataUrl(mcpPublicUrl)
+  );
+  const { router: mcpRouter, onShutdown: onMcpShutdown } = createMcpRouter();
+
+  app.use(
+    "/mcp",
+    requireBearerAuth({ verifier: tokenVerifier, resourceMetadataUrl: resourceMetadataUrl.href }),
+    express.json({ limit: "4mb" }),
+    mcpRouter
+  );
 
   app.use(express.json({ limit: "1mb" }));
 
@@ -103,9 +116,21 @@ async function main() {
     }
   }
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`[server] listening on http://localhost:${PORT} (uiMode=${uiMode})`);
   });
+
+  async function shutdown() {
+    console.log("[server] shutting down...");
+    await onMcpShutdown();
+    server.close(() => {
+      console.log("[server] HTTP server closed");
+      process.exit(0);
+    });
+  }
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   startSyncScheduler();
 }

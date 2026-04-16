@@ -19,11 +19,6 @@ const services: Service[] = [
     color: "\x1b[36m", // cyan
     env: { UI_DEV_MIDDLEWARE: "1" },
   },
-  {
-    name: "mcp   ",
-    filter: "@askdb/mcp-server",
-    color: "\x1b[35m", // magenta
-  },
 ];
 
 const RESET = "\x1b[0m";

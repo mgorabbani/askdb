@@ -4,15 +4,8 @@ services:
     image: askdb:local
     container_name: askdb
     restart: unless-stopped
-    # Bind to 127.0.0.1 only: container ports stay reachable from the same
-    # host (local dev via localhost, Coolify's Traefik via the internal docker
-    # network) but are not exposed on the VPS's public interface. Public
-    # traffic arrives via Traefik labels set through the Coolify Domains field:
-    #   https://askdb.talt.ai:3100,https://askdb.talt.ai:3001/mcp
-    # which routes / → :3100 (UI) and /mcp → :3001 (MCP) on one TLS cert.
     ports:
-      - "127.0.0.1:3100:3100"   # API + UI
-      - "127.0.0.1:3001:3001"   # MCP
+      - "127.0.0.1:3100:3100"   # API + UI + MCP (single port)
     env_file:
       - .env
     environment:

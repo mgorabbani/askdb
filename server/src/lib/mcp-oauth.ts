@@ -24,39 +24,13 @@ import {
   revokeOAuthToken,
   storeOAuthClient,
   verifyOAuthAccessToken,
+  getOAuthIssuerUrl,
+  getMcpPublicUrl,
   type OAuthClientRecord,
 } from "@askdb/shared";
 import { getSession } from "./session.js";
 
-const DEFAULT_PORT = process.env.PORT ?? "3100";
-const DEFAULT_MCP_PORT = process.env.MCP_PORT ?? "3001";
-
-function isLocalHostname(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1";
-}
-
-export function getOAuthIssuerUrl(): URL {
-  const raw = process.env.MCP_OAUTH_ISSUER_URL
-    ?? process.env.BETTER_AUTH_URL
-    ?? `http://localhost:${DEFAULT_PORT}`;
-  const url = new URL(raw);
-  return new URL(url.origin);
-}
-
-export function getMcpPublicUrl(): URL {
-  const configured = process.env.MCP_PUBLIC_URL;
-  if (configured) return new URL(configured);
-
-  const authBase = process.env.BETTER_AUTH_URL
-    ? new URL(process.env.BETTER_AUTH_URL)
-    : new URL(`http://localhost:${DEFAULT_PORT}`);
-
-  if (isLocalHostname(authBase.hostname)) {
-    return new URL(`http://localhost:${DEFAULT_MCP_PORT}/mcp`);
-  }
-
-  return new URL("/mcp", authBase);
-}
+export { getOAuthIssuerUrl, getMcpPublicUrl };
 
 export function createMcpOAuthRouter(): RequestHandler {
   const issuerUrl = getOAuthIssuerUrl();

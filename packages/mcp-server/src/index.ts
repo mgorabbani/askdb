@@ -1,42 +1,22 @@
-// MCP server — standalone Express process on port 3001
-// Shares SQLite + logic with @askdb/server via @askdb/shared.
+// MCP server — exported as a library; mounted by @askdb/server.
+// No standalone app.listen here.
 
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { config as loadEnv } from "dotenv";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "fs";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, "../../..");
-loadEnv({ path: path.join(repoRoot, ".env") });
-
-// Resolve DATABASE_PATH relative to repo root so it works regardless of cwd.
-if (process.env.DATABASE_PATH && !path.isAbsolute(process.env.DATABASE_PATH)) {
-  process.env.DATABASE_PATH = path.resolve(repoRoot, process.env.DATABASE_PATH);
-}
-
-const MONGO_HOST = existsSync("/.dockerenv") ? "host.docker.internal" : "localhost";
 
 import express from "express";
 import { MongoClient, type Db as MongoDb } from "mongodb";
 import { z } from "zod";
+import { existsSync } from "fs";
 
-import {
-  getOAuthProtectedResourceMetadataUrl,
-  mcpAuthMetadataRouter,
-} from "@modelcontextprotocol/sdk/server/auth/router.js";
-import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
-import { InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+// Side-effect import: adds req.auth augmentation to express-serve-static-core
+import "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import {
-  MCP_OAUTH_SUPPORTED_SCOPES,
   db,
   schema,
-  hashKey,
   eq,
   and,
   isNull,
@@ -47,7 +27,6 @@ import {
   generateSchemaOverviewMarkdown,
   invalidateGuideCache,
   saveAgentInsight,
-  verifyOAuthAccessToken,
 } from "@askdb/shared";
 
 import {
@@ -61,154 +40,19 @@ import {
 
 import { registerExecuteTypescriptTool } from "./code-mode/tool.js";
 
+export { createMcpTokenVerifier } from "./token-verifier.js";
+
+import type { AuthContext } from "./token-verifier.js";
+
+const MONGO_HOST = existsSync("/.dockerenv") ? "host.docker.internal" : "localhost";
+
 const {
   agentInsights,
-  apiKeys,
-  connections,
   schemaTables,
   schemaColumns,
   queryMemories,
   auditLogs,
 } = schema;
-
-// ── Auth: resolve bearer token → userId + apiKeyId + connectionId ───
-
-interface AuthContext {
-  userId: string;
-  apiKeyId: string;
-  connectionId: string;
-  sandboxPort: number;
-  authType: "api_key" | "oauth";
-  clientId: string;
-  scopes: string[];
-}
-
-function isLocalHostname(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1";
-}
-
-function getOAuthIssuerUrl(): URL {
-  const raw = process.env.MCP_OAUTH_ISSUER_URL
-    ?? process.env.BETTER_AUTH_URL
-    ?? `http://localhost:${process.env.PORT ?? "3100"}`;
-  const url = new URL(raw);
-  return new URL(url.origin);
-}
-
-function getMcpPublicUrl(): URL {
-  const configured = process.env.MCP_PUBLIC_URL;
-  if (configured) return new URL(configured);
-
-  const authBase = process.env.BETTER_AUTH_URL
-    ? new URL(process.env.BETTER_AUTH_URL)
-    : new URL(`http://localhost:${process.env.PORT ?? "3100"}`);
-
-  if (isLocalHostname(authBase.hostname)) {
-    return new URL(`http://localhost:${process.env.MCP_PORT || "3001"}/mcp`);
-  }
-
-  return new URL("/mcp", authBase);
-}
-
-function getConnectionContext(connectionId: string) {
-  const conn = db
-    .select()
-    .from(connections)
-    .where(eq(connections.id, connectionId))
-    .get();
-
-  if (!conn || !conn.sandboxPort) return null;
-  return conn;
-}
-
-function authenticateApiKeyToken(token: string): AuthContext | null {
-  if (!token.startsWith("ask_sk_")) return null;
-
-  const hash = hashKey(token);
-
-  const keyRow = db
-    .select()
-    .from(apiKeys)
-    .where(and(eq(apiKeys.keyHash, hash), isNull(apiKeys.revokedAt)))
-    .get();
-
-  if (!keyRow) return null;
-
-  const conn = db
-    .select()
-    .from(connections)
-    .where(eq(connections.userId, keyRow.userId))
-    .all()
-    .find((row) => typeof row.sandboxPort === "number");
-
-  if (!conn || !conn.sandboxPort) {
-    return null;
-  }
-
-  return {
-    userId: keyRow.userId,
-    apiKeyId: keyRow.id,
-    connectionId: conn.id,
-    sandboxPort: conn.sandboxPort,
-    authType: "api_key",
-    clientId: `legacy-api-key:${keyRow.id}`,
-    scopes: [...MCP_OAUTH_SUPPORTED_SCOPES],
-  };
-}
-
-const mcpPublicUrl = getMcpPublicUrl();
-const oauthIssuerUrl = getOAuthIssuerUrl();
-const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(mcpPublicUrl);
-
-const tokenVerifier = {
-  async verifyAccessToken(token: string) {
-    const tokenPrefix = token.slice(0, 10);
-    const legacyAuth = authenticateApiKeyToken(token);
-    if (legacyAuth) {
-      console.log(`[mcp] verifyAccessToken api_key prefix=${tokenPrefix} ok user=${legacyAuth.userId}`);
-      return {
-        token,
-        clientId: legacyAuth.clientId,
-        scopes: legacyAuth.scopes,
-        expiresAt: 4102444800,
-        resource: mcpPublicUrl,
-        extra: { ...legacyAuth },
-      };
-    }
-
-    const verified = verifyOAuthAccessToken(db, token);
-    if (!verified) {
-      console.warn(`[mcp] verifyAccessToken oauth MISS prefix=${tokenPrefix}`);
-      throw new InvalidTokenError("Invalid or expired token");
-    }
-
-    const conn = getConnectionContext(verified.connectionId);
-    if (!conn) {
-      console.warn(`[mcp] verifyAccessToken oauth NO_CONNECTION user=${verified.userId} connectionId=${verified.connectionId}`);
-      throw new InvalidTokenError("No active sandbox connection found for this token");
-    }
-    console.log(`[mcp] verifyAccessToken oauth ok user=${verified.userId} client=${verified.clientId} resource=${verified.resource}`);
-
-    const auth: AuthContext = {
-      userId: verified.userId,
-      apiKeyId: verified.apiKeyId,
-      connectionId: verified.connectionId,
-      sandboxPort: conn.sandboxPort!,
-      authType: "oauth",
-      clientId: verified.clientId,
-      scopes: verified.scopes,
-    };
-
-    return {
-      token,
-      clientId: verified.clientId,
-      scopes: verified.scopes,
-      expiresAt: Math.floor(verified.expiresAt.getTime() / 1000),
-      resource: new URL(verified.resource),
-      extra: { ...auth },
-    };
-  },
-};
 
 // ── MongoDB helpers ─────────────────────────────────────────────────
 
@@ -1237,215 +1081,169 @@ function createMcpServer(auth: AuthContext): McpServer {
   return server;
 }
 
-// ── Express app + transport management ──────────────────────────────
+// ── Router factory ───────────────────────────────────────────────────
 
-const app = express();
-app.set("trust proxy", 1);
-app.use((req, _res, next) => {
-  const authHeader = req.headers.authorization;
-  const authSummary = authHeader
-    ? `${authHeader.split(" ")[0]} ${authHeader.slice(-8)}`
-    : "-";
-  console.log(`[mcp] ${req.method} ${req.originalUrl} auth=${authSummary}`);
-  next();
-});
-const oauthMetadata = {
-  issuer: oauthIssuerUrl.href,
-  authorization_endpoint: new URL("/authorize", oauthIssuerUrl).href,
-  token_endpoint: new URL("/token", oauthIssuerUrl).href,
-  registration_endpoint: new URL("/register", oauthIssuerUrl).href,
-  revocation_endpoint: new URL("/revoke", oauthIssuerUrl).href,
-  response_types_supported: ["code"],
-  code_challenge_methods_supported: ["S256"],
-  token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
-  revocation_endpoint_auth_methods_supported: ["client_secret_post"],
-  grant_types_supported: ["authorization_code", "refresh_token"],
-  scopes_supported: [...MCP_OAUTH_SUPPORTED_SCOPES],
-};
+export function createMcpRouter(): {
+  router: express.Router;
+  onShutdown: () => Promise<void>;
+} {
+  // Map session ID → transport (scoped to this router instance)
+  const transports: Record<string, StreamableHTTPServerTransport> = {};
 
-app.use(
-  mcpAuthMetadataRouter({
-    oauthMetadata,
-    resourceServerUrl: mcpPublicUrl,
-    scopesSupported: [...MCP_OAUTH_SUPPORTED_SCOPES],
-    resourceName: "askdb MCP",
-    serviceDocumentationUrl: new URL("/dashboard/setup", oauthIssuerUrl),
-  })
-);
+  function getRequestAuthContext(req: express.Request): AuthContext | null {
+    const extra = req.auth?.extra as Partial<AuthContext> | undefined;
+    if (
+      !extra
+      || typeof extra.userId !== "string"
+      || typeof extra.apiKeyId !== "string"
+      || typeof extra.connectionId !== "string"
+      || typeof extra.sandboxPort !== "number"
+      || typeof extra.clientId !== "string"
+      || (extra.authType !== "api_key" && extra.authType !== "oauth")
+      || !Array.isArray(extra.scopes)
+    ) {
+      return null;
+    }
 
-const authMiddleware = requireBearerAuth({
-  verifier: tokenVerifier,
-  resourceMetadataUrl,
-});
-
-app.use(express.json());
-
-// Map session ID → transport
-const transports: Record<string, StreamableHTTPServerTransport> = {};
-
-function getRequestAuthContext(req: express.Request): AuthContext | null {
-  const extra = req.auth?.extra as Partial<AuthContext> | undefined;
-  if (
-    !extra
-    || typeof extra.userId !== "string"
-    || typeof extra.apiKeyId !== "string"
-    || typeof extra.connectionId !== "string"
-    || typeof extra.sandboxPort !== "number"
-    || typeof extra.clientId !== "string"
-    || (extra.authType !== "api_key" && extra.authType !== "oauth")
-    || !Array.isArray(extra.scopes)
-  ) {
-    return null;
+    return {
+      userId: extra.userId,
+      apiKeyId: extra.apiKeyId,
+      connectionId: extra.connectionId,
+      sandboxPort: extra.sandboxPort,
+      authType: extra.authType,
+      clientId: extra.clientId,
+      scopes: extra.scopes.filter((scope): scope is string => typeof scope === "string"),
+    };
   }
 
-  return {
-    userId: extra.userId,
-    apiKeyId: extra.apiKeyId,
-    connectionId: extra.connectionId,
-    sandboxPort: extra.sandboxPort,
-    authType: extra.authType,
-    clientId: extra.clientId,
-    scopes: extra.scopes.filter((scope): scope is string => typeof scope === "string"),
-  };
-}
+  const router = express.Router();
 
-// POST /mcp — main MCP endpoint. Also accept "/" because Coolify's Traefik
-// path-based routing (https://askdb.talt.ai/mcp → :3001) strips the /mcp
-// prefix before forwarding, so inside the container the request arrives as
-// POST / on port 3001. Local dev still works because clients hit
-// http://localhost:3001/mcp directly.
-const MCP_ENDPOINT_PATHS = ["/mcp", "/"];
-app.post(MCP_ENDPOINT_PATHS, authMiddleware, async (req, res) => {
-  const auth = getRequestAuthContext(req);
-  if (!auth) {
-    res.status(401).json({
-      jsonrpc: "2.0",
-      error: { code: -32001, message: "Unauthorized" },
-      id: null,
-    });
-    return;
-  }
+  // Boundary logger — scoped to /mcp so it doesn't clutter unrelated routes.
+  router.use((req, _res, next) => {
+    const auth = req.headers.authorization;
+    const authSuffix = typeof auth === "string" ? auth.slice(-8) : "none";
+    console.log(`[mcp] ${req.method} ${req.originalUrl} auth=…${authSuffix}`);
+    next();
+  });
 
-  const sessionId = req.headers["mcp-session-id"] as string | undefined;
-
-  try {
-    let transport: StreamableHTTPServerTransport;
-
-    if (sessionId && transports[sessionId]) {
-      // Reuse existing transport
-      transport = transports[sessionId];
-    } else if (!sessionId && isInitializeRequest(req.body)) {
-      // New initialization request
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (sid: string) => {
-          console.log(`[MCP] Session initialized: ${sid}`);
-          transports[sid] = transport;
-        },
+  // POST / — main MCP endpoint (mounted at /mcp by the host app)
+  router.post("/", async (req, res) => {
+    const auth = getRequestAuthContext(req);
+    if (!auth) {
+      res.status(401).json({
+        jsonrpc: "2.0",
+        error: { code: -32001, message: "Unauthorized" },
+        id: null,
       });
+      return;
+    }
 
-      transport.onclose = () => {
-        const sid = transport.sessionId;
-        if (sid && transports[sid]) {
-          console.log(`[MCP] Session closed: ${sid}`);
-          delete transports[sid];
-        }
-      };
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
-      // Connect a fresh MCP server for this session
-      const mcpServer = createMcpServer(auth);
-      await mcpServer.connect(transport);
+    try {
+      let transport: StreamableHTTPServerTransport;
+
+      if (sessionId && transports[sessionId]) {
+        // Reuse existing transport
+        transport = transports[sessionId];
+      } else if (!sessionId && isInitializeRequest(req.body)) {
+        // New initialization request
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (sid: string) => {
+            console.log(`[MCP] Session initialized: ${sid}`);
+            transports[sid] = transport;
+          },
+        });
+
+        transport.onclose = () => {
+          const sid = transport.sessionId;
+          if (sid && transports[sid]) {
+            console.log(`[MCP] Session closed: ${sid}`);
+            delete transports[sid];
+          }
+        };
+
+        // Connect a fresh MCP server for this session
+        const mcpServer = createMcpServer(auth);
+        await mcpServer.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+        return;
+      } else {
+        res.status(400).json({
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Bad Request: no valid session ID" },
+          id: null,
+        });
+        return;
+      }
+
       await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error("[MCP] Error handling POST:", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null,
+        });
+      }
+    }
+  });
+
+  // GET / — SSE stream
+  router.get("/", async (req, res) => {
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    if (!sessionId || !transports[sessionId]) {
+      res.status(400).send("Invalid or missing session ID");
       return;
-    } else {
-      res.status(400).json({
-        jsonrpc: "2.0",
-        error: { code: -32000, message: "Bad Request: no valid session ID" },
-        id: null,
-      });
+    }
+
+    if (!getRequestAuthContext(req)) {
+      res.status(401).send("Unauthorized");
       return;
     }
 
-    await transport.handleRequest(req, res, req.body);
-  } catch (error) {
-    console.error("[MCP] Error handling POST:", error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: "2.0",
-        error: { code: -32603, message: "Internal server error" },
-        id: null,
-      });
+    const transport = transports[sessionId];
+    await transport.handleRequest(req, res);
+  });
+
+  // DELETE / — session termination
+  router.delete("/", async (req, res) => {
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    if (!sessionId || !transports[sessionId]) {
+      res.status(400).send("Invalid or missing session ID");
+      return;
+    }
+
+    if (!getRequestAuthContext(req)) {
+      res.status(401).send("Unauthorized");
+      return;
+    }
+
+    const transport = transports[sessionId];
+    await transport.handleRequest(req, res);
+  });
+
+  async function onShutdown() {
+    for (const sid of Object.keys(transports)) {
+      try {
+        const t = transports[sid];
+        if (t) await t.close();
+        delete transports[sid];
+      } catch (e) {
+        console.error(`[MCP] Error closing session ${sid}:`, e);
+      }
+    }
+    // Close MongoDB clients
+    for (const [port, client] of mongoClients) {
+      try {
+        await client.close();
+      } catch (e) {
+        console.error(`[MCP] Error closing MongoDB client on port ${port}:`, e);
+      }
     }
   }
-});
 
-// GET /mcp — SSE stream
-app.get(MCP_ENDPOINT_PATHS, authMiddleware, async (req, res) => {
-  const sessionId = req.headers["mcp-session-id"] as string | undefined;
-  if (!sessionId || !transports[sessionId]) {
-    res.status(400).send("Invalid or missing session ID");
-    return;
-  }
-
-  if (!getRequestAuthContext(req)) {
-    res.status(401).send("Unauthorized");
-    return;
-  }
-
-  const transport = transports[sessionId];
-  await transport.handleRequest(req, res);
-});
-
-// DELETE /mcp — session termination
-app.delete(MCP_ENDPOINT_PATHS, authMiddleware, async (req, res) => {
-  const sessionId = req.headers["mcp-session-id"] as string | undefined;
-  if (!sessionId || !transports[sessionId]) {
-    res.status(400).send("Invalid or missing session ID");
-    return;
-  }
-
-  if (!getRequestAuthContext(req)) {
-    res.status(401).send("Unauthorized");
-    return;
-  }
-
-  const transport = transports[sessionId];
-  await transport.handleRequest(req, res);
-});
-
-// Health check
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", uptime: process.uptime() });
-});
-
-// ── Start ───────────────────────────────────────────────────────────
-
-const PORT = parseInt(process.env.MCP_PORT || "3001", 10);
-
-app.listen(PORT, () => {
-  console.log(`[MCP] askdb MCP server listening on port ${PORT}`);
-});
-
-// Graceful shutdown
-process.on("SIGINT", async () => {
-  console.log("[MCP] Shutting down...");
-  for (const sid of Object.keys(transports)) {
-    try {
-      const t = transports[sid];
-      if (t) await t.close();
-      delete transports[sid];
-    } catch (e) {
-      console.error(`[MCP] Error closing session ${sid}:`, e);
-    }
-  }
-  // Close MongoDB clients
-  for (const [port, client] of mongoClients) {
-    try {
-      await client.close();
-    } catch (e) {
-      console.error(`[MCP] Error closing MongoDB client on port ${port}:`, e);
-    }
-  }
-  console.log("[MCP] Shutdown complete");
-  process.exit(0);
-});
+  return { router, onShutdown };
+}
