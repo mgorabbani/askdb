@@ -1,4 +1,28 @@
 services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    environment:
+      # Only enable the minimum API surface askdb needs.
+      # Everything else stays locked down by default.
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1        # needed: destroy() removes sandbox volumes on connection delete
+      EXEC: 0
+      SERVICES: 0
+      SWARM: 0
+      SYSTEM: 0
+      PLUGINS: 0
+      INFO: 1           # dockerode pings this during client init
+      PING: 1           # dockerode pings this during client init
+      VERSION: 1        # dockerode reads this during client init
+      POST: 1           # required: create/start/stop/remove are POST/DELETE
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    expose:
+      - "2375"
+
   askdb:
     build: .
     image: ghcr.io/expatal/askdb:latest
@@ -9,15 +33,18 @@ services:
       SERVE_UI: "1"
       BETTER_AUTH_URL: https://${DOMAIN}
       DATABASE_PATH: /app/data/askdb.db
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
     env_file:
       - .env
     volumes:
       - askdb-data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
       - "host.docker.internal:host-gateway"
     expose:
       - "3100"
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/api/health >/dev/null || exit 1"]
       interval: 30s

@@ -1,7 +1,12 @@
 import Docker from "dockerode";
 import { existsSync } from "fs";
 
-const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+// When DOCKER_HOST is set (e.g. tcp://docker-socket-proxy:2375), dockerode
+// parses it automatically. Fall back to the Unix socket for bare-metal runs.
+const dockerOpts = process.env.DOCKER_HOST
+  ? {}
+  : { socketPath: "/var/run/docker.sock" };
+const docker = new Docker(dockerOpts);
 
 const MONGO_IMAGE = "mongo:7";
 const PORT_RANGE_START = 27100;

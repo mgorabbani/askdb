@@ -340,6 +340,8 @@ These invariants always hold:
 8. **API keys are hashed** (SHA-256), shown once, never stored in plaintext
 9. **Every MCP query is logged** to the audit trail
 
+> **Docker socket hardening:** the compose file includes a `tecnativa/docker-socket-proxy` sidecar so askdb never has direct access to `/var/run/docker.sock` — only the containers, images, networks, and volumes endpoints it needs are exposed.
+
 <br/>
 
 ## Development
