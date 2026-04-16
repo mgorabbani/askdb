@@ -1,16 +1,13 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="askdb" width="120" />
+  <img src="docs/assets/logo.png" alt="AskDB" height="48" align="middle" /><strong>AskDB</strong> &mdash; Give AI agents safe access to your database.
 </p>
 
-<h1 align="center">askdb</h1>
-
 <p align="center">
-  <strong>Give AI agents safe access to your database.</strong><br/>
   Your database, sandboxed. Your fields, controlled. One MCP endpoint for every AI tool.
 </p>
 
 <p align="center">
-  <img src="docs/assets/cover-github.png" alt="askdb — self-hosted bridge between your database and any MCP-speaking AI agent" />
+  <img src="docs/assets/cover-github.png" alt="AskDB — self-hosted bridge between your database and any MCP-speaking AI agent" width="50%" />
 </p>
 
 <p align="center">
@@ -18,7 +15,6 @@
   <a href="https://github.com/mgorabbani/askdb/stargazers"><img src="https://img.shields.io/github/stars/mgorabbani/askdb?style=flat" alt="Stars" /></a>
   <a href="#try-it-locally-with-docker"><img src="https://img.shields.io/badge/docker--compose-ready-2496ED.svg?logo=docker&logoColor=white" alt="Docker Compose" /></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Streamable_HTTP-8A2BE2.svg" alt="MCP Streamable HTTP" /></a>
-  <a href="https://discord.gg/askdb"><img src="https://img.shields.io/badge/discord-join-5865F2.svg?logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -31,9 +27,9 @@
 
 ---
 
-## About askdb
+## About AskDB
 
-**askdb** is a self-hosted bridge between your MongoDB database and any AI agent that speaks [MCP](https://modelcontextprotocol.io). It clones your production data into an isolated sandbox, lets you control exactly which fields the AI can see, and exposes a single `/mcp` endpoint that plugs into Claude, ChatGPT, Cursor, and anything else.
+**AskDB** is a self-hosted bridge between your MongoDB database and any AI agent that speaks [MCP](https://modelcontextprotocol.io). It clones your production data into an isolated sandbox, lets you control exactly which fields the AI can see, and exposes a single `/mcp` endpoint that plugs into Claude, ChatGPT, Cursor, and anything else.
 
 No data masking. No fake data. Hidden fields are simply omitted from every response — the AI never knows they exist. Every query is audited.
 
@@ -55,7 +51,7 @@ The product is one dashboard, one `/mcp` URL, one SQLite file of config, and a D
 
 <br/>
 
-## askdb is right for you if
+## AskDB is right for you if
 
 - You need **business answers from your database** without writing queries
 - You want AI agents to **query real data**, not stale CSV exports
@@ -145,28 +141,20 @@ Limits per execution: 30s wall-clock timeout, 128MB memory, 50 bridge calls, 256
 
 <br/>
 
-## Problems askdb solves
+## Problems AskDB solves
 
-| Without askdb | With askdb |
+| Without AskDB | With AskDB |
 |---|---|
 | You share raw MongoDB credentials with AI tools and hope nothing gets written. | Sandbox isolation. AI queries a read-only copy. Production is never touched. |
 | You export CSVs to ChatGPT. Data is stale within hours, and you just violated GDPR. | Real-time queries against live sandbox data. Fields with PII are auto-hidden. |
 | You set up Metabase/Looker for weeks, and your AI agent still can't use it. | One MCP endpoint. Works with Claude, ChatGPT, Cursor in minutes. |
-| Business team asks "how many pro users signed up this week?" and waits for an engineer. | They ask the AI agent directly. It queries askdb. Answer in seconds. |
+| Business team asks "how many pro users signed up this week?" and waits for an engineer. | They ask the AI agent directly. It queries AskDB. Answer in seconds. |
 | You have no idea what your AI agent queried or when. | Full audit trail. Every query, every timestamp, every result count. |
 | You want AI to see `orders` but not `email` or `credit_card` inside orders. | Field-level toggles. Hide specific fields, not entire collections. |
 
 <br/>
 
 ## How It Works
-
-```
-Your Prod MongoDB ──> mongodump ──> Sandbox Container
-                                         │
-                                    MCP Server ──> strips hidden fields
-                                         │
-                                  Claude / ChatGPT / Cursor
-```
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -188,7 +176,7 @@ Your Prod MongoDB ──> mongodump ──> Sandbox Container
 ```
 
 1. **Connect** &mdash; paste your MongoDB connection string
-2. **Clone** &mdash; askdb runs `mongodump`/`mongorestore` into an isolated Docker container
+2. **Clone** &mdash; AskDB runs `mongodump`/`mongorestore` into an isolated Docker container
 3. **Configure** &mdash; browse your schema with real sample data, toggle fields visible or hidden
 4. **Query** &mdash; give your AI agent the MCP URL &mdash; hidden fields are stripped from every response
 
@@ -196,12 +184,12 @@ The AI never knows hidden fields exist. Hidden collections are excluded from met
 
 <br/>
 
-## What askdb is not
+## What AskDB is not
 
 |                              |                                                                                                |
 | ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| **Not a database.**          | askdb stores configs and audit logs. Your data stays in MongoDB.                               |
-| **Not a BI tool.**           | No dashboards, no charts. askdb gives AI agents structured access to your data.                |
+| **Not a database.**          | AskDB stores configs and audit logs. Your data stays in MongoDB.                               |
+| **Not a BI tool.**           | No dashboards, no charts. AskDB gives AI agents structured access to your data.                |
 | **Not an agent framework.**  | We don't build agents. We give them safe, controlled access to your database.                  |
 | **Not a data masking tool.** | No fake data, no tokenization. Hidden fields are simply omitted from responses.                |
 | **Not multi-tenant.**        | Single-user, self-hosted. Multi-user and teams are on the roadmap.                             |
@@ -247,7 +235,7 @@ Paste `https://<your-domain>/mcp` into Claude / Cursor as a custom MCP connector
 The installer offers three modes:
 
 - **Caddy (default):** auto-provisioned HTTPS. Requires a domain with A record.
-- **Proxyless:** you run your own reverse proxy (Coolify, Traefik, nginx). askdb binds `127.0.0.1:3100`; point your proxy there.
+- **Proxyless:** you run your own reverse proxy (Coolify, Traefik, nginx). AskDB binds `127.0.0.1:3100`; point your proxy there.
 - **Cloudflare Tunnel:** no open ports. Paste your tunnel token when prompted.
 
 ### Upgrade
@@ -266,7 +254,7 @@ Your data lives in the `askdb-data` Docker volume (SQLite + generated secrets + 
 
 ## Try it locally with Docker
 
-Want to kick the tires before pointing a domain at a VPS? This runs askdb on your own machine in a few minutes — no installer, no DNS, no HTTPS. Works on macOS, Linux, or Windows with Docker Desktop.
+Want to kick the tires before pointing a domain at a VPS? This runs AskDB on your own machine in a few minutes — no installer, no DNS, no HTTPS. Works on macOS, Linux, or Windows with Docker Desktop.
 
 ### Prerequisites
 
@@ -370,11 +358,11 @@ Add to MCP config:
 **How long does setup take?**
 Under 10 minutes. Paste your MongoDB URL, configure visibility, copy the MCP URL into your AI tool.
 
-**Does askdb write to my production database?**
+**Does AskDB write to my production database?**
 Never. It connects read-only to run `mongodump`, then all queries go against the sandbox copy.
 
 **How is field filtering different from data masking?**
-Data masking replaces values with fakes. askdb simply omits hidden fields entirely &mdash; the AI doesn't know they exist.
+Data masking replaces values with fakes. AskDB simply omits hidden fields entirely &mdash; the AI doesn't know they exist.
 
 **Can I use this with databases other than MongoDB?**
 Not yet. PostgreSQL and MySQL adapters are on the roadmap. The adapter interface is ready.
@@ -383,7 +371,7 @@ Not yet. PostgreSQL and MySQL adapters are on the roadmap. The adapter interface
 Manual sync &mdash; click "Sync Now" in the dashboard. Scheduled sync is on the roadmap.
 
 **Is this secure enough for production data?**
-askdb enforces read-only access, field stripping at query time, query validation (allowlist only), encrypted connection strings, and full audit logging. See the [Security](#security) section.
+AskDB enforces read-only access, field stripping at query time, query validation (allowlist only), encrypted connection strings, and full audit logging. See the [Security](#security) section.
 
 <br/>
 
@@ -401,7 +389,7 @@ These invariants always hold:
 8. **API keys are hashed** (SHA-256), shown once, never stored in plaintext
 9. **Every MCP query is logged** to the audit trail
 
-> **Docker socket hardening:** the compose file includes a `tecnativa/docker-socket-proxy` sidecar so askdb never has direct access to `/var/run/docker.sock` — only the containers, images, networks, and volumes endpoints it needs are exposed.
+> **Docker socket hardening:** the compose file includes a `tecnativa/docker-socket-proxy` sidecar so AskDB never has direct access to `/var/run/docker.sock` — only the containers, images, networks, and volumes endpoints it needs are exposed.
 
 <br/>
 
@@ -419,7 +407,7 @@ pnpm --filter @askdb/mcp-server test    # Unit tests (sandbox isolation, bridge,
 pnpm --filter @askdb/mcp-server e2e     # End-to-end test against real MongoDB (requires Docker)
 ```
 
-The `e2e` script boots a throwaway MongoDB container, seeds two collections, spins up a temporary askdb MCP server pointed at a temp SQLite DB, and walks through the full Streamable HTTP transport with the official MCP client. It asserts that hidden fields are stripped before data crosses into the Code Mode sandbox &mdash; the cleanest way to verify nothing has regressed end to end.
+The `e2e` script boots a throwaway MongoDB container, seeds two collections, spins up a temporary AskDB MCP server pointed at a temp SQLite DB, and walks through the full Streamable HTTP transport with the official MCP client. It asserts that hidden fields are stripped before data crosses into the Code Mode sandbox &mdash; the cleanest way to verify nothing has regressed end to end.
 
 ### Project Structure
 
@@ -476,7 +464,6 @@ askdb/
 
 ## Community
 
-- [Discord](https://discord.gg/askdb) &mdash; Join the community
 - [GitHub Issues](https://github.com/mgorabbani/askdb/issues) &mdash; Bugs and feature requests
 - [GitHub Discussions](https://github.com/mgorabbani/askdb/discussions) &mdash; Ideas and RFCs
 - [Code of Conduct](CODE_OF_CONDUCT.md) &mdash; Contributor Covenant 2.1
@@ -493,9 +480,9 @@ We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for deve
 
 ## License
 
-askdb is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+AskDB is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
 
-AGPLv3 means you can self-host, fork, and modify askdb freely. If you run a modified version as a service accessible to others over a network, you must share your modifications under the same license.
+AGPLv3 means you can self-host, fork, and modify AskDB freely. If you run a modified version as a service accessible to others over a network, you must share your modifications under the same license.
 
 ## Star History
 
