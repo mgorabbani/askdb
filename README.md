@@ -207,142 +207,59 @@ The AI never knows hidden fields exist. Hidden collections are excluded from met
 
 <br/>
 
-## Quickstart
+## Install on a VPS (one command)
 
-Open source. Self-hosted. No askdb account required.
+On a fresh Ubuntu 22.04+ or Debian 12+ VPS:
 
-### Local (recommended for trying it out)
+    curl -fsSL https://raw.githubusercontent.com/mgorabbani/askdb/main/install.sh | sudo bash
 
-```bash
-npx askdb onboard --yes
-```
+The installer will:
+- Install Docker if it's missing (after asking).
+- Prompt for your domain and a Let's Encrypt email.
+- Generate all secrets automatically.
+- Bring up the stack behind Caddy with auto-provisioned HTTPS.
 
-Checks prerequisites, generates secrets, installs dependencies, and starts askdb. Open `http://localhost:3100` to create your admin account.
+Total time on a fresh VPS is 2–3 minutes.
 
-> **Requirements:** Node.js 20+, pnpm 9+, Docker
+### Set up your domain
 
-### VPS (self-hosted production)
+1. In your DNS provider, add an A record pointing to your VPS IP:
 
-```bash
-curl -sSL https://get.askdb.dev | bash
-```
+       name:   askdb         (or any subdomain)
+       value:  <VPS public IP>
+       proxy:  **OFF**       — Cloudflare users: grey cloud, not orange.
+                               The orange proxy blocks Let's Encrypt HTTP-01.
 
-Installs Docker (if needed), generates secrets, and starts askdb via Docker Compose.
+2. Verify DNS has propagated:
 
-### Manual
+       dig +short askdb.example.com
 
-```bash
-git clone https://github.com/expatal/askdb.git
-cd askdb
-pnpm install
-pnpm dev
-```
+3. Open ports 80 and 443 on your VPS firewall.
+4. Run the installer above.
 
-This starts the API server + dashboard at `http://localhost:3100` with Vite hot reload.
+### Connect Claude or Cursor
 
-<br/>
+Paste `https://<your-domain>/mcp` into Claude / Cursor as a custom MCP connector. Complete the OAuth approval in your browser when prompted. No API key is needed for remote clients.
 
-## Self-host with Docker
+### Alternative install modes
 
-The repo ships a multi-stage `Dockerfile` and a `docker-compose.yml` that runs the API, embedded UI, and MCP server in a single container under `tini`.
+The installer offers three modes:
 
-### One-command run
+- **Caddy (default):** auto-provisioned HTTPS. Requires a domain with A record.
+- **Proxyless:** you run your own reverse proxy (Coolify, Traefik, nginx). askdb binds `127.0.0.1:3100`; point your proxy there.
+- **Cloudflare Tunnel:** no open ports. Paste your tunnel token when prompted.
 
-```bash
-git clone https://github.com/expatal/askdb.git
-cd askdb
-cp .env.example .env
+### Upgrade
 
-# Generate real secrets (do not ship the .env.example defaults to prod)
-echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> .env
-echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env
-echo "BETTER_AUTH_URL=http://localhost:3100" >> .env
+    cd /opt/askdb && sudo bash <(curl -fsSL https://raw.githubusercontent.com/mgorabbani/askdb/main/install.sh)
 
-docker compose up -d --build
-```
+The installer is idempotent — re-running it against an existing install pulls the latest images and restarts. Secrets, data, and your `.env` are preserved.
 
-Open `http://localhost:3100`, hit `/setup` once to create the admin user, and you're in. `/setup` locks itself after the first user.
+### Backups
 
-### What the container exposes
+Your data lives in the `askdb-data` Docker volume (SQLite + generated secrets + encrypted connection strings). Back it up with:
 
-| Port   | Purpose                                        | Expose publicly?                   |
-| ------ | ---------------------------------------------- | ---------------------------------- |
-| `3100` | HTTP API + embedded dashboard UI + MCP server  | Yes — this is the only port needed |
-
-Everything — UI, API, and `/mcp` — runs on a single port. No secondary port to map or firewall.
-
-### Required environment
-
-| Variable              | Notes                                                                 |
-| --------------------- | --------------------------------------------------------------------- |
-| `BETTER_AUTH_SECRET`  | 64 hex chars. `openssl rand -hex 32`. Rotating logs out all sessions. |
-| `ENCRYPTION_KEY`      | 64 hex chars. AES-256-GCM key for stored connection strings. **Do not lose this** — losing it makes saved connections unrecoverable. |
-| `BETTER_AUTH_URL`     | Must match the public URL the browser hits. Wrong value breaks auth cookies/redirects. |
-| `MCP_PUBLIC_URL`      | Canonical public MCP URL. Set this for remote OAuth clients like Claude if `/mcp` is exposed on a different host/path than the default. |
-| `DATABASE_PATH`       | Defaults to `/app/data/askdb.db` inside the container. Leave it alone unless you know why. |
-
-### Persistent state
-
-The compose file declares a named volume `askdb-data` mounted at `/app/data`. This is where the SQLite config DB lives. Back up this volume and your secrets — that's the entire askdb state.
-
-### The Docker socket mount (important)
-
-```yaml
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock
-```
-
-askdb spawns sandbox MongoDB containers on the host via [`dockerode`](https://github.com/apocas/dockerode) for every connection. **Without this mount, sync fails at runtime.** The trade-off: anything inside the askdb container has root-equivalent access to the host's Docker daemon. This is acceptable for a single-tenant self-host where the VPS itself is the trust boundary. Do not run askdb this way on shared multi-tenant infrastructure.
-
-### Updating
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-The Dockerfile uses a BuildKit cache mount on the pnpm store, so incremental rebuilds stay fast as long as `pnpm-lock.yaml` is unchanged.
-
-### Deploy on Coolify / Dokploy / Portainer
-
-Any platform that consumes a `docker-compose.yml` works. The Coolify-friendly version:
-
-```yaml
-services:
-  askdb:
-    build: .
-    image: askdb:local
-    restart: unless-stopped
-    ports:
-      - "3100:3100"
-    environment:
-      DATABASE_PATH: /app/data/askdb.db
-      SERVE_UI: "1"
-      PORT: "3100"
-      NODE_ENV: production
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-    volumes:
-      - askdb-data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
-
-volumes:
-  askdb-data:
-```
-
-Differences from the bundled `docker-compose.yml`: no `container_name` (the platform manages it), no `env_file` (set env vars through the platform's UI).
-
-Steps:
-
-1. **Coolify → New Resource → Docker Compose Empty**, paste the compose above (or point Coolify at this repo for auto-rebuild on push).
-2. Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `BETTER_AUTH_URL` under **Environment Variables**.
-3. Assign your domain (e.g. `https://askdb.yourdomain.com`) and set the proxy port to `3100`. Coolify provisions Let's Encrypt automatically.
-4. Approve the Docker socket mount when Coolify warns you.
-5. Deploy. First build is ~3–5 min; rebuilds are faster.
-6. Open the domain, run `/setup`, create the admin user.
-
-The same pattern works for Dokploy and Portainer — they all consume the compose file as-is.
+    docker run --rm -v askdb-data:/data alpine tar czf - /data > askdb-backup.tgz
 
 <br/>
 
