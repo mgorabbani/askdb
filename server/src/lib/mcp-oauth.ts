@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import {
   mcpAuthRouter,
@@ -6,6 +7,7 @@ import {
 import type { OAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import {
   AccessDeniedError,
+  InvalidClientMetadataError,
   InvalidGrantError,
   InvalidScopeError,
   InvalidTargetError,
@@ -46,7 +48,15 @@ export function createMcpOAuthRouter(): RequestHandler {
       async registerClient(client) {
         const record = normalizeClientRecord(client as OAuthClientRecord);
         console.log(`[mcp-oauth] registerClient id=${record.client_id} name=${record.client_name ?? "-"}`);
-        return storeOAuthClient(db, record);
+        try {
+          return storeOAuthClient(db, record);
+        } catch (err) {
+          // Re-throw validation errors as InvalidClientMetadataError so the SDK
+          // returns a 400 (not 500) with an RFC-compliant error body.
+          throw new InvalidClientMetadataError(
+            err instanceof Error ? err.message : "Invalid client registration"
+          );
+        }
       },
     },
 
@@ -85,6 +95,14 @@ export function createMcpOAuthRouter(): RequestHandler {
       }
 
       if (req.method === "GET") {
+        const csrfToken = randomBytes(16).toString("hex");
+        const isHttps = (process.env.BETTER_AUTH_URL ?? "").startsWith("https://");
+        res.cookie("askdb_csrf", csrfToken, {
+          sameSite: "lax",
+          httpOnly: true,
+          secure: isHttps,
+          maxAge: 10 * 60_000, // 10 minutes
+        });
         res.status(200).type("html").send(
           renderConsentPage({
             client,
@@ -95,8 +113,17 @@ export function createMcpOAuthRouter(): RequestHandler {
               scopes,
             },
             formAction: req.originalUrl.split("?")[0] || "/authorize",
+            csrfToken,
           })
         );
+        return;
+      }
+
+      // CSRF double-submit verification — must match cookie set during GET.
+      const formToken = readFormValue(req, "csrf");
+      const cookieToken = req.cookies?.askdb_csrf as string | undefined;
+      if (!formToken || !cookieToken || formToken !== cookieToken) {
+        res.status(403).send("CSRF token mismatch");
         return;
       }
 
@@ -262,6 +289,7 @@ function renderConsentPage(input: {
     state?: string;
   };
   formAction: string;
+  csrfToken: string;
 }) {
   const clientName = escapeHtml(input.client.client_name || input.client.client_id);
   const redirectUri = escapeHtml(input.params.redirectUri);
@@ -279,6 +307,7 @@ function renderConsentPage(input: {
     hiddenField("resource", input.params.resource),
     hiddenField("scope", input.params.scopes.join(" ")),
     input.params.state ? hiddenField("state", input.params.state) : "",
+    hiddenField("csrf", input.csrfToken),
   ].join("");
 
   return `<!doctype html>

@@ -1087,6 +1087,8 @@ export function createMcpRouter(): {
   router: express.Router;
   onShutdown: () => Promise<void>;
 } {
+  const MAX_SESSIONS = 1000;
+
   // Map session ID → transport (scoped to this router instance)
   const transports: Record<string, StreamableHTTPServerTransport> = {};
 
@@ -1147,6 +1149,16 @@ export function createMcpRouter(): {
         // Reuse existing transport
         transport = transports[sessionId];
       } else if (!sessionId && isInitializeRequest(req.body)) {
+        // Cap the session map to avoid unbounded memory growth.
+        if (Object.keys(transports).length >= MAX_SESSIONS) {
+          res.status(429).json({
+            jsonrpc: "2.0",
+            error: { code: -32000, message: "Active session limit reached" },
+            id: null,
+          });
+          return;
+        }
+
         // New initialization request
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),

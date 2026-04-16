@@ -133,11 +133,37 @@ export function getOAuthClient(database: AskDb, clientId: string): OAuthClientRe
   return JSON.parse(decrypt(row.encryptedClient)) as OAuthClientRecord;
 }
 
+function validateRedirectUris(uris: unknown): string[] {
+  if (!Array.isArray(uris) || uris.length === 0 || uris.length > 5) {
+    throw new Error("redirect_uris must be an array of 1–5 URIs");
+  }
+  const result: string[] = [];
+  for (const raw of uris) {
+    if (typeof raw !== "string" || raw.includes("*")) {
+      throw new Error(`invalid redirect_uri: ${String(raw)}`);
+    }
+    let parsed: URL;
+    try { parsed = new URL(raw); } catch { throw new Error(`invalid redirect_uri: ${raw}`); }
+    const isHttps = parsed.protocol === "https:";
+    const isLocalhostHttp = parsed.protocol === "http:" &&
+      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1");
+    if (!isHttps && !isLocalhostHttp) {
+      throw new Error(`redirect_uri must be https, or http://localhost for local dev: ${raw}`);
+    }
+    result.push(raw);
+  }
+  return result;
+}
+
 export function storeOAuthClient(
   database: AskDb,
   client: OAuthClientRecord,
   now = new Date()
 ): OAuthClientRecord {
+  // Validate redirect URIs before storing — rejects non-https (except localhost),
+  // wildcards, empty lists, and lists longer than 5.
+  validateRedirectUris(client.redirect_uris);
+
   const existing = database
     .select({ id: oauthClients.id })
     .from(oauthClients)

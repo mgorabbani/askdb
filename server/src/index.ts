@@ -2,6 +2,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { config as loadEnv } from "dotenv";
+import rateLimit from "express-rate-limit";
+import cookieParser from "cookie-parser";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
@@ -40,10 +42,25 @@ const PORT = parseInt(process.env.PORT ?? "3100", 10);
 async function main() {
   const app = express();
 
-  // Behind Coolify/Traefik (or any reverse proxy). Required so express-rate-limit
-  // (used by the MCP SDK auth handlers) can read the real client IP from
-  // X-Forwarded-For instead of throwing ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
-  app.set("trust proxy", 1);
+  // Trust only the Caddy sidecar (Docker bridge subnets) and loopback.
+  // Never `true` or `1` — both let a client talking directly to port 3100
+  // forge X-Forwarded-For. See commit 0970e24 for prior art.
+  app.set("trust proxy", ["127.0.0.1/32", "::1/128", "172.16.0.0/12", "10.0.0.0/8"]);
+
+  // Parse cookies — needed for CSRF double-submit on consent form.
+  // Does not consume request body, so order relative to better-auth is fine.
+  app.use(cookieParser());
+
+  // Rate-limit OAuth endpoints (30 req/min per IP, independent budget per path
+  // so an attacker can't starve /token by hammering /register).
+  // Must be mounted BEFORE createMcpOAuthRouter() so it runs first.
+  // Do NOT apply to /mcp — SSE connections are long-lived and would trip the limit.
+  const makeOAuthLimiter = () =>
+    rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
+  app.use("/authorize", makeOAuthLimiter());
+  app.use("/token", makeOAuthLimiter());
+  app.use("/register", makeOAuthLimiter());
+  app.use("/revoke", makeOAuthLimiter());
 
   // Body parsing — note better-auth needs the raw stream, so mount auth BEFORE json()
   app.use("/api/auth", authRouter);
@@ -72,7 +89,15 @@ async function main() {
   });
 
   // Tells the UI whether the first-run /setup flow should be shown.
-  app.get("/api/setup-status", async (_req, res) => {
+  // Only reveal setup status to same-origin callers. Anonymous external
+  // probes get a generic 200 so attackers can't tell if an admin exists.
+  app.get("/api/setup-status", async (req, res) => {
+    const origin = req.get("origin");
+    const sameOrigin = typeof origin === "string" && origin === process.env.BETTER_AUTH_URL;
+    if (!sameOrigin) {
+      res.json({ ok: true });
+      return;
+    }
     res.json({ needsSetup: !(await isSignupLocked()) });
   });
 
