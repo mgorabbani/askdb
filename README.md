@@ -1,54 +1,55 @@
 <p align="center">
-  <img src="doc/assets/header.png" alt="askdb — ask your database anything" width="720" />
+  <img src="docs/assets/logo.png" alt="askdb" width="120" />
+</p>
+
+<h1 align="center">askdb</h1>
+
+<p align="center">
+  <strong>Give AI agents safe access to your database.</strong><br/>
+  Your database, sandboxed. Your fields, controlled. One MCP endpoint for every AI tool.
 </p>
 
 <p align="center">
-  <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
-  <a href="#how-it-works"><strong>How It Works</strong></a> &middot;
-  <a href="https://github.com/mgorabbani/askdb"><strong>GitHub</strong></a> &middot;
-  <a href="https://discord.gg/askdb"><strong>Discord</strong></a>
+  <img src="docs/assets/cover-github.png" alt="askdb — self-hosted bridge between your database and any MCP-speaking AI agent" />
 </p>
 
 <p align="center">
   <a href="https://github.com/mgorabbani/askdb/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="AGPL v3 License" /></a>
   <a href="https://github.com/mgorabbani/askdb/stargazers"><img src="https://img.shields.io/github/stars/mgorabbani/askdb?style=flat" alt="Stars" /></a>
-  <a href="https://discord.gg/askdb"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
+  <a href="#try-it-locally-with-docker"><img src="https://img.shields.io/badge/docker--compose-ready-2496ED.svg?logo=docker&logoColor=white" alt="Docker Compose" /></a>
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Streamable_HTTP-8A2BE2.svg" alt="MCP Streamable HTTP" /></a>
+  <a href="https://discord.gg/askdb"><img src="https://img.shields.io/badge/discord-join-5865F2.svg?logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
-<br/>
+<p align="center">
+  <a href="#install-on-a-vps-one-command"><strong>Install</strong></a> &middot;
+  <a href="#try-it-locally-with-docker"><strong>Try Locally</strong></a> &middot;
+  <a href="#how-it-works"><strong>How It Works</strong></a> &middot;
+  <a href="#connecting-your-ai-agent"><strong>Connect AI</strong></a> &middot;
+  <a href="#security"><strong>Security</strong></a>
+</p>
 
-## What is askdb?
+---
 
-# Give AI agents safe access to your database
+## About askdb
 
-**Your database, sandboxed. Your fields, controlled. One MCP endpoint for every AI tool.**
+**askdb** is a self-hosted bridge between your MongoDB database and any AI agent that speaks [MCP](https://modelcontextprotocol.io). It clones your production data into an isolated sandbox, lets you control exactly which fields the AI can see, and exposes a single `/mcp` endpoint that plugs into Claude, ChatGPT, Cursor, and anything else.
 
-askdb is a self-hosted bridge between your MongoDB and AI agents. It clones your production data into an isolated sandbox, lets you control exactly which fields AI can see, and exposes a standard [MCP](https://modelcontextprotocol.io) endpoint that works with Claude, ChatGPT, Cursor, and anything else.
+No data masking. No fake data. Hidden fields are simply omitted from every response — the AI never knows they exist. Every query is audited.
 
-No data masking. No fake data. Hidden fields are simply omitted from every response.
+The product is one dashboard, one `/mcp` URL, one SQLite file of config, and a Docker container per connected database. You self-host it on your own VPS with a single `curl | sudo bash` command; AGPLv3 means you can fork it, run it, and modify it — just share changes if you ship a service built on it.
 
-**Ask questions about your data, not your engineer's calendar.**
+### Get started in 3 steps
 
-|        | Step            | Example                                                            |
-| ------ | --------------- | ------------------------------------------------------------------ |
-| **01** | Connect         | Paste your MongoDB URL                                             |
-| **02** | Configure       | See real sample data, toggle which fields AI can see               |
-| **03** | Query           | Give your AI agent the MCP URL. Done.                              |
-
-<br/>
+|        | Step        | What happens                                                  |
+| ------ | ----------- | ------------------------------------------------------------- |
+| **01** | Connect     | Paste your MongoDB connection string in the dashboard         |
+| **02** | Configure   | Browse real sample data, toggle which fields the AI can see   |
+| **03** | Query       | Give your AI agent `https://<your-domain>/mcp` — done         |
 
 <div align="center">
-<table>
-  <tr>
-    <td align="center"><strong>Works<br/>with</strong></td>
-    <td align="center"><strong>Claude</strong><br/><sub>Desktop & Code</sub></td>
-    <td align="center"><strong>ChatGPT</strong><br/><sub>MCP Plugin</sub></td>
-    <td align="center"><strong>Cursor</strong><br/><sub>IDE</sub></td>
-    <td align="center"><strong>Any MCP</strong><br/><sub>Client</sub></td>
-  </tr>
-</table>
 
-<em>If it speaks MCP, it works with askdb.</em>
+**Works with** &nbsp;·&nbsp; Claude Desktop &nbsp;·&nbsp; Claude Code &nbsp;·&nbsp; ChatGPT &nbsp;·&nbsp; Cursor &nbsp;·&nbsp; any MCP client
 
 </div>
 
