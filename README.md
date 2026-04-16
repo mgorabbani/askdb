@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/expatal/askdb/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
+  <a href="https://github.com/mgorabbani/askdb/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="AGPL v3 License" /></a>
   <a href="https://github.com/expatal/askdb/stargazers"><img src="https://img.shields.io/github/stars/expatal/askdb?style=flat" alt="Stars" /></a>
   <a href="https://discord.gg/askdb"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
 </p>
@@ -416,20 +416,25 @@ askdb/
 ## Community
 
 - [Discord](https://discord.gg/askdb) &mdash; Join the community
-- [GitHub Issues](https://github.com/expatal/askdb/issues) &mdash; Bugs and feature requests
-- [GitHub Discussions](https://github.com/expatal/askdb/discussions) &mdash; Ideas and RFCs
+- [GitHub Issues](https://github.com/mgorabbani/askdb/issues) &mdash; Bugs and feature requests
+- [GitHub Discussions](https://github.com/mgorabbani/askdb/discussions) &mdash; Ideas and RFCs
+- [Code of Conduct](CODE_OF_CONDUCT.md) &mdash; Contributor Covenant 2.1
+- [Security Policy](SECURITY.md) &mdash; Responsible disclosure (do **not** open public issues for vulnerabilities)
+- [Changelog](CHANGELOG.md) &mdash; Release history
 
 <br/>
 
 ## Contributing
 
-We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for details.
+We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for development setup, project layout, and commit conventions.
 
 <br/>
 
 ## License
 
-MIT &copy; 2025 Expatal
+askdb is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+
+AGPLv3 means you can self-host, fork, and modify askdb freely. If you run a modified version as a service accessible to others over a network, you must share your modifications under the same license.
 
 ## Star History
 
@@ -440,5 +445,5 @@ MIT &copy; 2025 Expatal
 ---
 
 <p align="center">
-  <sub>Open source under MIT. Built for people who want AI to understand their data, not own it.</sub>
+  <sub>Open source under AGPLv3. Built for people who want AI to understand their data, not own it.</sub>
 </p>
