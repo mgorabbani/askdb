@@ -5,13 +5,13 @@
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
   <a href="#how-it-works"><strong>How It Works</strong></a> &middot;
-  <a href="https://github.com/expatal/askdb"><strong>GitHub</strong></a> &middot;
+  <a href="https://github.com/mgorabbani/askdb"><strong>GitHub</strong></a> &middot;
   <a href="https://discord.gg/askdb"><strong>Discord</strong></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/mgorabbani/askdb/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="AGPL v3 License" /></a>
-  <a href="https://github.com/expatal/askdb/stargazers"><img src="https://img.shields.io/github/stars/expatal/askdb?style=flat" alt="Stars" /></a>
+  <a href="https://github.com/mgorabbani/askdb/stargazers"><img src="https://img.shields.io/github/stars/mgorabbani/askdb?style=flat" alt="Stars" /></a>
   <a href="https://discord.gg/askdb"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
 </p>
 
@@ -438,7 +438,7 @@ AGPLv3 means you can self-host, fork, and modify askdb freely. If you run a modi
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/image?repos=expatal/askdb&type=date&legend=top-left)](https://www.star-history.com/?repos=expatal%2Faskdb&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/image?repos=mgorabbani/askdb&type=date&legend=top-left)](https://www.star-history.com/?repos=mgorabbani%2Faskdb&type=date&legend=top-left)
 
 <br/>
 

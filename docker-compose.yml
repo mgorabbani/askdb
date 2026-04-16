@@ -25,7 +25,7 @@ services:
 
   askdb:
     build: .
-    image: ghcr.io/expatal/askdb:latest
+    image: ghcr.io/mgorabbani/askdb:latest
     restart: unless-stopped
     environment:
       NODE_ENV: production
