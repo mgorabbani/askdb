@@ -263,6 +263,55 @@ Your data lives in the `askdb-data` Docker volume (SQLite + generated secrets + 
 
 <br/>
 
+## Try it locally with Docker
+
+Want to kick the tires before pointing a domain at a VPS? This runs askdb on your own machine in a few minutes — no installer, no DNS, no HTTPS. Works on macOS, Linux, or Windows with Docker Desktop.
+
+### Prerequisites
+
+- [Docker Desktop](https://docs.docker.com/desktop/) (macOS / Windows) **or** Docker Engine + Compose plugin (Linux). Verify with:
+
+      docker compose version
+
+### Run
+
+```bash
+git clone https://github.com/mgorabbani/askdb.git
+cd askdb
+
+# Run with the "proxyless" profile — no Caddy, no TLS, binds to 127.0.0.1:3100
+DOMAIN=localhost ACME_EMAIL=test@example.com COMPOSE_PROFILES=proxyless \
+  docker compose up --build -d
+
+# Wait ~45 seconds for the first build + healthcheck, then:
+docker compose ps                   # askdb should show "(healthy)"
+open http://127.0.0.1:3100          # or visit it in your browser
+```
+
+Create an admin account in the dashboard, add a database connection, and try the MCP URL at `http://127.0.0.1:3100/mcp` with a local MCP client (Claude Code / Cursor with a fixed bearer token — remote OAuth flows need HTTPS).
+
+### Tail logs
+
+```bash
+docker compose logs -f askdb
+```
+
+### Stop and clean up
+
+```bash
+# Stop containers, keep data
+docker compose down
+
+# Stop and wipe everything (DB, secrets, volumes)
+docker compose down -v
+```
+
+### What this does not test
+
+The local setup deliberately skips the Caddy TLS path and the `install.sh` installer — both require a public domain and a real VPS. Use this to evaluate the product; use `install.sh` on a VPS once you're ready to connect Claude or Cursor over OAuth.
+
+<br/>
+
 ## Connecting Your AI Agent
 
 Claude, Cursor, and any other remote-MCP client connect to `https://<your-domain>/mcp`. Paste that URL as a custom connector and complete the OAuth approval in your browser. No port, no path rewriting, no API key.
