@@ -31,6 +31,7 @@ import {
 
 import {
   buildConfigResourcePayload,
+  buildDatabasesOverviewMarkdown,
   buildDebugResourcePayload,
   buildInitializeInstructions,
   buildInsightsResourceMarkdown,
@@ -39,10 +40,18 @@ import {
 } from "./patterns.js";
 
 import { registerExecuteTypescriptTool } from "./code-mode/tool.js";
+import {
+  RESULT_VIEWER_URI,
+  buildStructuredResult,
+  resultViewerHtml,
+  resultViewerResourceMeta,
+  resultViewerToolMeta,
+  type StructuredResult,
+} from "./mcp-apps/viewer.js";
 
 export { createMcpTokenVerifier } from "./token-verifier.js";
 
-import type { AuthContext } from "./token-verifier.js";
+import type { AccessibleConnection, AuthContext } from "./token-verifier.js";
 
 const MONGO_HOST = existsSync("/.dockerenv") ? "host.docker.internal" : "localhost";
 
@@ -272,6 +281,50 @@ function normalizeOptionalString(value: string | undefined): string | null {
   return normalized ? normalized : null;
 }
 
+// ── Connection resolution ───────────────────────────────────────────
+
+interface ConnectionResolutionError {
+  ok: false;
+  error: string;
+}
+
+interface ConnectionResolutionOk {
+  ok: true;
+  connection: AccessibleConnection;
+}
+
+type ConnectionResolution = ConnectionResolutionOk | ConnectionResolutionError;
+
+function resolveConnection(
+  auth: AuthContext,
+  connectionId?: string
+): ConnectionResolution {
+  if (auth.connections.length === 0) {
+    return { ok: false, error: "No active database connections are available." };
+  }
+
+  const targetId = connectionId ?? auth.defaultConnectionId;
+  const match = auth.connections.find((c) => c.id === targetId);
+
+  if (!match) {
+    if (!connectionId && auth.connections.length > 1) {
+      const options = auth.connections
+        .map((c) => `${c.id} (${c.name})`)
+        .join(", ");
+      return {
+        ok: false,
+        error: `Multiple databases are available; pass connectionId. Options: ${options}`,
+      };
+    }
+    return {
+      ok: false,
+      error: `Database "${connectionId}" is not accessible. Call list-databases to see what is available.`,
+    };
+  }
+
+  return { ok: true, connection: match };
+}
+
 // ── Allowed operations & forbidden stages ───────────────────────────
 
 const ALLOWED_OPS = new Set(["find", "aggregate", "count", "distinct"]);
@@ -287,31 +340,40 @@ const FORBIDDEN_STAGES = new Set([
 
 function createMcpServer(auth: AuthContext): McpServer {
   const controls = readServerControls();
-  const topInsights = db
-    .select({
-      category: agentInsights.category,
-      collection: agentInsights.collection,
-      insight: agentInsights.insight,
-    })
-    .from(agentInsights)
-    .where(eq(agentInsights.connectionId, auth.connectionId))
-    .orderBy(desc(agentInsights.useCount), desc(agentInsights.lastConfirmedAt))
-    .all()
-    .slice(0, 12);
+  const accessibleIds = auth.connections.map((c) => c.id);
+  const topInsights =
+    accessibleIds.length === 0
+      ? []
+      : db
+          .select({
+            category: agentInsights.category,
+            collection: agentInsights.collection,
+            insight: agentInsights.insight,
+          })
+          .from(agentInsights)
+          .where(inArray(agentInsights.connectionId, accessibleIds))
+          .orderBy(
+            desc(agentInsights.useCount),
+            desc(agentInsights.lastConfirmedAt)
+          )
+          .all()
+          .slice(0, 12);
 
   const server = new McpServer(
     { name: "askdb", version: "0.2.0" },
     {
       capabilities: { tools: {}, resources: {} },
-      instructions: buildInitializeInstructions(topInsights),
+      instructions: buildInitializeInstructions(topInsights, auth.connections),
     }
   );
   const resourceUris = [
+    "databases://overview",
     "guide://usage",
     "schema://overview",
     "insights://global",
     "config://config",
     "debug://askdb",
+    RESULT_VIEWER_URI,
   ];
   const toolNames: string[] = [];
   const debugState = {
@@ -349,11 +411,31 @@ function createMcpServer(auth: AuthContext): McpServer {
       pipeline?: Record<string, unknown>[];
       field?: string;
       limit?: number;
+      connectionId?: string;
     },
-    queryStr = JSON.stringify(parsed)
+    queryStr?: string
   ) {
     const start = Date.now();
-    const { collection, operation, filter, pipeline, field, limit } = parsed;
+    const {
+      collection,
+      operation,
+      filter,
+      pipeline,
+      field,
+      limit,
+      connectionId,
+    } = parsed;
+
+    const resolved = resolveConnection(auth, connectionId);
+    if (!resolved.ok) return toolError(toolName, resolved.error);
+    const conn = resolved.connection;
+
+    // Serialize without the connectionId so audit/query-pattern records stay
+    // comparable to pre-multi-DB entries.
+    const { connectionId: _unused, ...forSerialization } = parsed;
+    void _unused;
+    const serializedQuery =
+      queryStr ?? JSON.stringify(forSerialization);
 
     if (!ALLOWED_OPS.has(operation)) {
       return toolError(
@@ -362,13 +444,16 @@ function createMcpServer(auth: AuthContext): McpServer {
       );
     }
 
-    const hiddenTables = getHiddenTableNames(auth.connectionId);
+    const hiddenTables = getHiddenTableNames(conn.id);
     if (hiddenTables.has(collection)) {
       return toolError(toolName, `Collection "${collection}" is not accessible.`);
     }
 
-    if (!getAccessibleTable(auth.connectionId, collection)) {
-      return toolError(toolName, `Collection "${collection}" not found.`);
+    if (!getAccessibleTable(conn.id, collection)) {
+      return toolError(
+        toolName,
+        `Collection "${collection}" not found in database "${conn.name}".`
+      );
     }
 
     if (operation === "aggregate" && pipeline) {
@@ -390,11 +475,11 @@ function createMcpServer(auth: AuthContext): McpServer {
       }
     }
 
-    const hiddenFields = getHiddenFieldNames(auth.connectionId);
+    const hiddenFields = getHiddenFieldNames(conn.id);
     const maxDocs = Math.min(limit ?? 500, 500);
 
     try {
-      const mongoDb = await getMongoDb(auth.sandboxPort);
+      const mongoDb = await getMongoDb(conn.sandboxPort);
       const coll = mongoDb.collection(collection);
       let docs: Record<string, unknown>[];
 
@@ -419,13 +504,13 @@ function createMcpServer(auth: AuthContext): McpServer {
             maxTimeMS: 10_000,
           });
           const elapsed = Date.now() - start;
-          writeAuditLog(toolName, auth.connectionId, auth.apiKeyId, {
-            query: queryStr,
+          writeAuditLog(toolName, conn.id, auth.apiKeyId, {
+            query: serializedQuery,
             collection,
             executionMs: elapsed,
             docCount: 1,
           });
-          recordQueryPattern(auth.connectionId, queryStr);
+          recordQueryPattern(conn.id, serializedQuery);
           rememberSuccess(toolName);
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ count }) }],
@@ -437,13 +522,13 @@ function createMcpServer(auth: AuthContext): McpServer {
           });
           const limited = values.slice(0, maxDocs);
           const elapsed = Date.now() - start;
-          writeAuditLog(toolName, auth.connectionId, auth.apiKeyId, {
-            query: queryStr,
+          writeAuditLog(toolName, conn.id, auth.apiKeyId, {
+            query: serializedQuery,
             collection,
             executionMs: elapsed,
             docCount: limited.length,
           });
-          recordQueryPattern(auth.connectionId, queryStr);
+          recordQueryPattern(conn.id, serializedQuery);
           rememberSuccess(toolName);
           return {
             content: [
@@ -458,26 +543,55 @@ function createMcpServer(auth: AuthContext): McpServer {
       const cleaned = docs.map((document) => stripFields(document, hiddenFields));
       const elapsed = Date.now() - start;
 
-      writeAuditLog(toolName, auth.connectionId, auth.apiKeyId, {
-        query: queryStr,
+      writeAuditLog(toolName, conn.id, auth.apiKeyId, {
+        query: serializedQuery,
         collection,
         executionMs: elapsed,
         docCount: cleaned.length,
       });
 
-      recordQueryPattern(auth.connectionId, queryStr);
+      recordQueryPattern(conn.id, serializedQuery);
       rememberSuccess(toolName);
+
+      const structured: StructuredResult = buildStructuredResult(cleaned, {
+        collection,
+        connectionId: conn.id,
+        connectionName: conn.name,
+        operation,
+        truncated: cleaned.length >= maxDocs,
+      });
 
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(cleaned, null, 2) },
         ],
+        structuredContent: structured as unknown as Record<string, unknown>,
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return toolError(toolName, `Query error: ${msg}`);
     }
   }
+
+  server.registerResource(
+    "databases",
+    "databases://overview",
+    {
+      title: "Databases",
+      description:
+        "Plain-language list of every database this user has connected, with what each one is for. Read this first to pick which database holds the data you need.",
+      mimeType: "text/markdown",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "databases://overview",
+          mimeType: "text/markdown",
+          text: buildDatabasesOverviewMarkdown(auth.connections),
+        },
+      ],
+    })
+  );
 
   server.registerResource(
     "guide",
@@ -492,7 +606,7 @@ function createMcpServer(auth: AuthContext): McpServer {
         {
           uri: "guide://usage",
           mimeType: "text/markdown",
-          text: await generateGuideMarkdown(auth.connectionId),
+          text: await generateGuideMarkdown(auth.defaultConnectionId),
         },
       ],
     })
@@ -503,7 +617,8 @@ function createMcpServer(auth: AuthContext): McpServer {
     "schema://overview",
     {
       title: "Schema Overview",
-      description: "High-level schema overview with collections, relationships, gotchas, and common queries.",
+      description:
+        "Schema overview for the default database. Pass connectionId to collection-schema or other tools to target a different database.",
       mimeType: "text/markdown",
     },
     async () => ({
@@ -511,7 +626,7 @@ function createMcpServer(auth: AuthContext): McpServer {
         {
           uri: "schema://overview",
           mimeType: "text/markdown",
-          text: await generateSchemaOverviewMarkdown(auth.connectionId),
+          text: await generateSchemaOverviewMarkdown(auth.defaultConnectionId),
         },
       ],
     })
@@ -522,19 +637,22 @@ function createMcpServer(auth: AuthContext): McpServer {
     "insights://global",
     {
       title: "Saved Insights",
-      description: "Saved agent insights for this connection.",
+      description: "Saved agent insights across every database this user owns.",
       mimeType: "text/markdown",
     },
     async () => {
-      const insights = db
-        .select({
-          category: agentInsights.category,
-          collection: agentInsights.collection,
-          insight: agentInsights.insight,
-        })
-        .from(agentInsights)
-        .where(eq(agentInsights.connectionId, auth.connectionId))
-        .all();
+      const ids = auth.connections.map((c) => c.id);
+      const insights = ids.length
+        ? db
+            .select({
+              category: agentInsights.category,
+              collection: agentInsights.collection,
+              insight: agentInsights.insight,
+            })
+            .from(agentInsights)
+            .where(inArray(agentInsights.connectionId, ids))
+            .all()
+        : [];
 
       return {
         contents: [
@@ -563,7 +681,7 @@ function createMcpServer(auth: AuthContext): McpServer {
           mimeType: "application/json",
           text: JSON.stringify(
             buildConfigResourcePayload({
-              connectionId: auth.connectionId,
+              connectionId: auth.defaultConnectionId,
               disabledItems: controls.disabledItems,
               readOnly: controls.readOnly,
               resources: resourceUris,
@@ -572,6 +690,27 @@ function createMcpServer(auth: AuthContext): McpServer {
             null,
             2
           ),
+        },
+      ],
+    })
+  );
+
+  server.registerResource(
+    "result-viewer",
+    RESULT_VIEWER_URI,
+    {
+      title: "Result Viewer",
+      description:
+        "MCP Apps UI that renders find/aggregate/sample-documents results as an interactive table. Hosts without MCP Apps support ignore this resource.",
+      mimeType: "text/html",
+      _meta: resultViewerResourceMeta(),
+    },
+    async () => ({
+      contents: [
+        {
+          uri: RESULT_VIEWER_URI,
+          mimeType: "text/html",
+          text: resultViewerHtml(),
         },
       ],
     })
@@ -591,7 +730,7 @@ function createMcpServer(auth: AuthContext): McpServer {
           uri: "debug://askdb",
           mimeType: "application/json",
           text: JSON.stringify(
-            buildDebugResourcePayload(auth.connectionId, debugState),
+            buildDebugResourcePayload(auth.defaultConnectionId, debugState),
             null,
             2
           ),
@@ -599,6 +738,68 @@ function createMcpServer(auth: AuthContext): McpServer {
       ],
     })
   );
+
+  if (
+    isToolEnabled(controls, "list-databases", {
+      category: "askdb",
+      operation: "metadata",
+    })
+  ) {
+    toolNames.push("list-databases");
+    server.registerTool(
+      "list-databases",
+      {
+        title: "List Databases",
+        description:
+          "List every database this user has connected, with each database's name and a plain-language description of what it contains. Call this first so you can pick which database to query. Every other tool accepts a `connectionId` to target a specific database.",
+        annotations: { readOnlyHint: true },
+        inputSchema: {},
+      },
+      async () => {
+        const result = auth.connections.map((conn) => {
+          const tables = db
+            .select({
+              name: schemaTables.name,
+              description: schemaTables.description,
+              docCount: schemaTables.docCount,
+            })
+            .from(schemaTables)
+            .where(
+              and(
+                eq(schemaTables.connectionId, conn.id),
+                eq(schemaTables.isVisible, true)
+              )
+            )
+            .all();
+
+          return {
+            connectionId: conn.id,
+            name: conn.name,
+            description: conn.description,
+            databaseName: conn.databaseName,
+            collectionCount: tables.length,
+            topCollections: tables
+              .slice()
+              .sort((a, b) => b.docCount - a.docCount)
+              .slice(0, 8)
+              .map((t) => ({
+                name: t.name,
+                docCount: t.docCount,
+                description: t.description,
+              })),
+          };
+        });
+
+        rememberSuccess("list-databases");
+
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      }
+    );
+  }
 
   if (
     isToolEnabled(controls, "list-collections", {
@@ -612,18 +813,29 @@ function createMcpServer(auth: AuthContext): McpServer {
       {
         title: "List Collections",
         description:
-          "List visible MongoDB collections for this tenant. Use this or the schema://overview resource before querying unfamiliar data.",
+          "List visible MongoDB collections in one database. Pass `connectionId` to target a specific database when the user has more than one; omit it to use the default.",
         annotations: { readOnlyHint: true },
-        inputSchema: {},
+        inputSchema: {
+          connectionId: z
+            .string()
+            .optional()
+            .describe(
+              "Which database to list. Omit when only one database is connected."
+            ),
+        },
       },
-      async () => {
+      async ({ connectionId }) => {
         const start = Date.now();
+        const resolved = resolveConnection(auth, connectionId);
+        if (!resolved.ok) return toolError("list-collections", resolved.error);
+        const conn = resolved.connection;
+
         const tables = db
           .select()
           .from(schemaTables)
           .where(
             and(
-              eq(schemaTables.connectionId, auth.connectionId),
+              eq(schemaTables.connectionId, conn.id),
               eq(schemaTables.isVisible, true)
             )
           )
@@ -649,7 +861,7 @@ function createMcpServer(auth: AuthContext): McpServer {
           })
           .filter((table): table is NonNullable<typeof table> => table !== null);
 
-        writeAuditLog("list-collections", auth.connectionId, auth.apiKeyId, {
+        writeAuditLog("list-collections", conn.id, auth.apiKeyId, {
           executionMs: Date.now() - start,
           docCount: result.length,
         });
@@ -657,7 +869,19 @@ function createMcpServer(auth: AuthContext): McpServer {
 
         return {
           content: [
-            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  connectionId: conn.id,
+                  name: conn.name,
+                  databaseName: conn.databaseName,
+                  collections: result,
+                },
+                null,
+                2
+              ),
+            },
           ],
         };
       }
@@ -680,22 +904,35 @@ function createMcpServer(auth: AuthContext): McpServer {
         annotations: { readOnlyHint: true },
         inputSchema: {
           collection: z.string().describe("The collection to inspect"),
+          connectionId: z
+            .string()
+            .optional()
+            .describe(
+              "Which database the collection lives in. Omit when only one database is connected."
+            ),
         },
       },
-      async ({ collection }) => {
+      async ({ collection, connectionId }) => {
         const start = Date.now();
-        const hiddenTables = getHiddenTableNames(auth.connectionId);
+        const resolved = resolveConnection(auth, connectionId);
+        if (!resolved.ok) return toolError("collection-schema", resolved.error);
+        const conn = resolved.connection;
+
+        const hiddenTables = getHiddenTableNames(conn.id);
         if (hiddenTables.has(collection)) {
           return toolError("collection-schema", `Collection "${collection}" is not accessible.`);
         }
 
-        const table = getAccessibleTable(auth.connectionId, collection);
+        const table = getAccessibleTable(conn.id, collection);
         if (!table) {
-          return toolError("collection-schema", `Collection "${collection}" not found.`);
+          return toolError(
+            "collection-schema",
+            `Collection "${collection}" not found in database "${conn.name}".`
+          );
         }
 
         const markdown = await generateCollectionDetailMarkdown(
-          auth.connectionId,
+          conn.id,
           collection
         );
         if (!markdown) {
@@ -705,7 +942,7 @@ function createMcpServer(auth: AuthContext): McpServer {
           );
         }
 
-        writeAuditLog("collection-schema", auth.connectionId, auth.apiKeyId, {
+        writeAuditLog("collection-schema", conn.id, auth.apiKeyId, {
           collection,
           executionMs: Date.now() - start,
           docCount: 1,
@@ -733,18 +970,26 @@ function createMcpServer(auth: AuthContext): McpServer {
         description:
           "Run a read-only MongoDB find query. Prefer this over the low-level query tool for standard document retrieval.",
         annotations: { readOnlyHint: true },
+        _meta: resultViewerToolMeta(),
         inputSchema: {
           collection: z.string().describe("The collection to query"),
           filter: z.record(z.string(), z.unknown()).optional(),
           limit: z.number().int().min(1).max(500).optional(),
+          connectionId: z
+            .string()
+            .optional()
+            .describe(
+              "Which database to query. Omit when only one database is connected."
+            ),
         },
       },
-      async ({ collection, filter, limit }) =>
+      async ({ collection, filter, limit, connectionId }) =>
         executeQueryOperation("find", {
           collection,
           operation: "find",
           filter,
           limit,
+          connectionId,
         })
     );
   }
@@ -763,20 +1008,28 @@ function createMcpServer(auth: AuthContext): McpServer {
         description:
           "Run a read-only MongoDB aggregation pipeline. Use collection-schema first for field names, relationships, and known gotchas.",
         annotations: { readOnlyHint: true },
+        _meta: resultViewerToolMeta(),
         inputSchema: {
           collection: z.string().describe("The collection to query"),
           pipeline: z
             .array(z.record(z.string(), z.unknown()))
             .describe("Aggregation pipeline stages"),
           limit: z.number().int().min(1).max(500).optional(),
+          connectionId: z
+            .string()
+            .optional()
+            .describe(
+              "Which database to query. Omit when only one database is connected."
+            ),
         },
       },
-      async ({ collection, pipeline, limit }) =>
+      async ({ collection, pipeline, limit, connectionId }) =>
         executeQueryOperation("aggregate", {
           collection,
           operation: "aggregate",
           pipeline,
           limit,
+          connectionId,
         })
     );
   }
@@ -798,13 +1051,20 @@ function createMcpServer(auth: AuthContext): McpServer {
         inputSchema: {
           collection: z.string().describe("The collection to query"),
           filter: z.record(z.string(), z.unknown()).optional(),
+          connectionId: z
+            .string()
+            .optional()
+            .describe(
+              "Which database to query. Omit when only one database is connected."
+            ),
         },
       },
-      async ({ collection, filter }) =>
+      async ({ collection, filter, connectionId }) =>
         executeQueryOperation("count", {
           collection,
           operation: "count",
           filter,
+          connectionId,
         })
     );
   }
@@ -828,15 +1088,22 @@ function createMcpServer(auth: AuthContext): McpServer {
           field: z.string().describe("The field to compute distinct values for"),
           filter: z.record(z.string(), z.unknown()).optional(),
           limit: z.number().int().min(1).max(500).optional(),
+          connectionId: z
+            .string()
+            .optional()
+            .describe(
+              "Which database to query. Omit when only one database is connected."
+            ),
         },
       },
-      async ({ collection, field, filter, limit }) =>
+      async ({ collection, field, filter, limit, connectionId }) =>
         executeQueryOperation("distinct", {
           collection,
           operation: "distinct",
           field,
           filter,
           limit,
+          connectionId,
         })
     );
   }
@@ -855,6 +1122,7 @@ function createMcpServer(auth: AuthContext): McpServer {
         description:
           "Get random sample documents from a collection using $sample. Use this after reviewing schema metadata when you need raw document examples.",
         annotations: { readOnlyHint: true },
+        _meta: resultViewerToolMeta(),
         inputSchema: {
           collection: z.string().describe("The collection to sample from"),
           limit: z
@@ -864,24 +1132,37 @@ function createMcpServer(auth: AuthContext): McpServer {
             .max(20)
             .default(5)
             .describe("Number of sample documents (max 20)"),
+          connectionId: z
+            .string()
+            .optional()
+            .describe(
+              "Which database to sample from. Omit when only one database is connected."
+            ),
         },
       },
-      async ({ collection, limit }) => {
+      async ({ collection, limit, connectionId }) => {
         const start = Date.now();
-        const hiddenTables = getHiddenTableNames(auth.connectionId);
+        const resolved = resolveConnection(auth, connectionId);
+        if (!resolved.ok) return toolError("sample-documents", resolved.error);
+        const conn = resolved.connection;
+
+        const hiddenTables = getHiddenTableNames(conn.id);
         if (hiddenTables.has(collection)) {
           return toolError("sample-documents", `Collection "${collection}" is not accessible.`);
         }
 
-        if (!getAccessibleTable(auth.connectionId, collection)) {
-          return toolError("sample-documents", `Collection "${collection}" not found.`);
+        if (!getAccessibleTable(conn.id, collection)) {
+          return toolError(
+            "sample-documents",
+            `Collection "${collection}" not found in database "${conn.name}".`
+          );
         }
 
         const sampleSize = Math.min(limit ?? 5, 20);
-        const hiddenFields = getHiddenFieldNames(auth.connectionId);
+        const hiddenFields = getHiddenFieldNames(conn.id);
 
         try {
-          const mongoDb = await getMongoDb(auth.sandboxPort);
+          const mongoDb = await getMongoDb(conn.sandboxPort);
           const coll = mongoDb.collection(collection);
           const docs = (await coll
             .aggregate([{ $sample: { size: sampleSize } }], { maxTimeMS: 10_000 })
@@ -890,17 +1171,26 @@ function createMcpServer(auth: AuthContext): McpServer {
           const cleaned = docs.map((document) => stripFields(document, hiddenFields));
           const elapsed = Date.now() - start;
 
-          writeAuditLog("sample-documents", auth.connectionId, auth.apiKeyId, {
+          writeAuditLog("sample-documents", conn.id, auth.apiKeyId, {
             collection,
             executionMs: elapsed,
             docCount: cleaned.length,
           });
           rememberSuccess("sample-documents");
 
+          const structured = buildStructuredResult(cleaned, {
+            collection,
+            connectionId: conn.id,
+            connectionName: conn.name,
+            operation: "sample",
+            truncated: cleaned.length >= sampleSize,
+          });
+
           return {
             content: [
               { type: "text" as const, text: JSON.stringify(cleaned, null, 2) },
             ],
+            structuredContent: structured as unknown as Record<string, unknown>,
           };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -930,9 +1220,15 @@ function createMcpServer(auth: AuthContext): McpServer {
             .describe(
               'JSON query object, e.g. {"collection":"users","operation":"find","filter":{"status":"active"}}'
             ),
+          connectionId: z
+            .string()
+            .optional()
+            .describe(
+              "Which database to query. Omit when only one database is connected."
+            ),
         },
       },
-      async ({ query: queryStr }) => {
+      async ({ query: queryStr, connectionId }) => {
         let parsed: {
           collection: string;
           operation: string;
@@ -948,7 +1244,11 @@ function createMcpServer(auth: AuthContext): McpServer {
           return toolError("query", "Invalid JSON in query parameter.");
         }
 
-        return executeQueryOperation("query", parsed, queryStr);
+        return executeQueryOperation(
+          "query",
+          { ...parsed, connectionId },
+          queryStr
+        );
       }
     );
   }
@@ -983,10 +1283,20 @@ function createMcpServer(auth: AuthContext): McpServer {
             .string()
             .optional()
             .describe("Optional working MongoDB query JSON that demonstrates the insight"),
+          connectionId: z
+            .string()
+            .optional()
+            .describe(
+              "Which database this insight applies to. Omit when only one database is connected."
+            ),
         },
       },
-      async ({ insight, collection, category, exampleQuery }) => {
+      async ({ insight, collection, category, exampleQuery, connectionId }) => {
         const start = Date.now();
+        const resolved = resolveConnection(auth, connectionId);
+        if (!resolved.ok) return toolError("save-insight", resolved.error);
+        const conn = resolved.connection;
+
         const normalizedInsight = insight.trim();
         const normalizedCollection = normalizeOptionalString(collection);
         const normalizedExampleQuery = normalizeOptionalString(exampleQuery);
@@ -996,7 +1306,7 @@ function createMcpServer(auth: AuthContext): McpServer {
         }
 
         if (normalizedCollection) {
-          const hiddenTables = getHiddenTableNames(auth.connectionId);
+          const hiddenTables = getHiddenTableNames(conn.id);
           if (hiddenTables.has(normalizedCollection)) {
             return toolError(
               "save-insight",
@@ -1004,10 +1314,10 @@ function createMcpServer(auth: AuthContext): McpServer {
             );
           }
 
-          if (!getAccessibleTable(auth.connectionId, normalizedCollection)) {
+          if (!getAccessibleTable(conn.id, normalizedCollection)) {
             return toolError(
               "save-insight",
-              `Collection "${normalizedCollection}" not found.`
+              `Collection "${normalizedCollection}" not found in database "${conn.name}".`
             );
           }
         }
@@ -1030,13 +1340,13 @@ function createMcpServer(auth: AuthContext): McpServer {
           apiKeyId: auth.apiKeyId,
           category,
           collection: normalizedCollection,
-          connectionId: auth.connectionId,
+          connectionId: conn.id,
           exampleQuery: normalizedExampleQuery,
           insight: normalizedInsight,
         });
 
-        invalidateGuideCache(auth.connectionId);
-        writeAuditLog("save-insight", auth.connectionId, auth.apiKeyId, {
+        invalidateGuideCache(conn.id);
+        writeAuditLog("save-insight", conn.id, auth.apiKeyId, {
           query: normalizedExampleQuery ?? undefined,
           collection: normalizedCollection ?? undefined,
           executionMs: Date.now() - start,
@@ -1068,7 +1378,10 @@ function createMcpServer(auth: AuthContext): McpServer {
     toolNames.push("execute-typescript");
     registerExecuteTypescriptTool({
       server,
-      auth: { connectionId: auth.connectionId, apiKeyId: auth.apiKeyId },
+      resolveConnection: (connectionId?: string) =>
+        resolveConnection(auth, connectionId),
+      apiKeyId: auth.apiKeyId,
+      hasMultipleConnections: auth.connections.length > 1,
       executeQueryOperation,
       hooks: {
         writeAuditLog,
@@ -1098,8 +1411,8 @@ export function createMcpRouter(): {
       !extra
       || typeof extra.userId !== "string"
       || typeof extra.apiKeyId !== "string"
-      || typeof extra.connectionId !== "string"
-      || typeof extra.sandboxPort !== "number"
+      || typeof extra.defaultConnectionId !== "string"
+      || !Array.isArray(extra.connections)
       || typeof extra.clientId !== "string"
       || (extra.authType !== "api_key" && extra.authType !== "oauth")
       || !Array.isArray(extra.scopes)
@@ -1107,11 +1420,34 @@ export function createMcpRouter(): {
       return null;
     }
 
+    const connections: AccessibleConnection[] = [];
+    for (const raw of extra.connections) {
+      if (
+        !raw
+        || typeof raw !== "object"
+        || typeof (raw as AccessibleConnection).id !== "string"
+        || typeof (raw as AccessibleConnection).name !== "string"
+        || typeof (raw as AccessibleConnection).databaseName !== "string"
+        || typeof (raw as AccessibleConnection).sandboxPort !== "number"
+      ) {
+        return null;
+      }
+      const conn = raw as AccessibleConnection;
+      connections.push({
+        id: conn.id,
+        name: conn.name,
+        description:
+          typeof conn.description === "string" ? conn.description : null,
+        databaseName: conn.databaseName,
+        sandboxPort: conn.sandboxPort,
+      });
+    }
+
     return {
       userId: extra.userId,
       apiKeyId: extra.apiKeyId,
-      connectionId: extra.connectionId,
-      sandboxPort: extra.sandboxPort,
+      defaultConnectionId: extra.defaultConnectionId,
+      connections,
       authType: extra.authType,
       clientId: extra.clientId,
       scopes: extra.scopes.filter((scope): scope is string => typeof scope === "string"),

@@ -15,14 +15,42 @@ import {
 
 const { apiKeys, connections } = schema;
 
+export interface AccessibleConnection {
+  id: string;
+  name: string;
+  description: string | null;
+  databaseName: string;
+  sandboxPort: number;
+}
+
 export interface AuthContext {
   userId: string;
   apiKeyId: string;
-  connectionId: string;
-  sandboxPort: number;
+  // Default connection id to use when a tool call omits `connectionId`.
+  // For OAuth tokens this is the connection the token was issued for;
+  // for API keys it's the first active sandbox (preserves legacy behavior
+  // when the user only has one DB connected).
+  defaultConnectionId: string;
+  connections: AccessibleConnection[];
   authType: "api_key" | "oauth";
   clientId: string;
   scopes: string[];
+}
+
+function loadAccessibleConnections(userId: string): AccessibleConnection[] {
+  return db
+    .select()
+    .from(connections)
+    .where(eq(connections.userId, userId))
+    .all()
+    .filter((row) => typeof row.sandboxPort === "number")
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? null,
+      databaseName: row.databaseName,
+      sandboxPort: row.sandboxPort!,
+    }));
 }
 
 function authenticateApiKeyToken(token: string): AuthContext | null {
@@ -38,37 +66,18 @@ function authenticateApiKeyToken(token: string): AuthContext | null {
 
   if (!keyRow) return null;
 
-  const conn = db
-    .select()
-    .from(connections)
-    .where(eq(connections.userId, keyRow.userId))
-    .all()
-    .find((row) => typeof row.sandboxPort === "number");
-
-  if (!conn || !conn.sandboxPort) {
-    return null;
-  }
+  const accessible = loadAccessibleConnections(keyRow.userId);
+  if (accessible.length === 0) return null;
 
   return {
     userId: keyRow.userId,
     apiKeyId: keyRow.id,
-    connectionId: conn.id,
-    sandboxPort: conn.sandboxPort,
+    defaultConnectionId: accessible[0]!.id,
+    connections: accessible,
     authType: "api_key",
     clientId: `legacy-api-key:${keyRow.id}`,
     scopes: [...MCP_OAUTH_SUPPORTED_SCOPES],
   };
-}
-
-function getConnectionContext(connectionId: string) {
-  const conn = db
-    .select()
-    .from(connections)
-    .where(eq(connections.id, connectionId))
-    .get();
-
-  if (!conn || !conn.sandboxPort) return null;
-  return conn;
 }
 
 export function createMcpTokenVerifier(deps: {
@@ -82,7 +91,7 @@ export function createMcpTokenVerifier(deps: {
       const legacyAuth = authenticateApiKeyToken(token);
       if (legacyAuth) {
         console.log(
-          `[mcp] verifyAccessToken api_key prefix=${tokenPrefix} ok user=${legacyAuth.userId}`
+          `[mcp] verifyAccessToken api_key prefix=${tokenPrefix} ok user=${legacyAuth.userId} dbs=${legacyAuth.connections.length}`
         );
         return {
           token,
@@ -100,8 +109,13 @@ export function createMcpTokenVerifier(deps: {
         throw new InvalidTokenError("Invalid or expired token");
       }
 
-      const conn = getConnectionContext(verified.connectionId);
-      if (!conn) {
+      // OAuth tokens are issued per-connection, but we still expose all of the
+      // user's active sandboxes so multi-DB-aware agents can pivot. The token's
+      // original connection stays as the default.
+      const accessible = loadAccessibleConnections(verified.userId);
+      const primary = accessible.find((c) => c.id === verified.connectionId);
+
+      if (!primary) {
         console.warn(
           `[mcp] verifyAccessToken oauth NO_CONNECTION user=${verified.userId} connectionId=${verified.connectionId}`
         );
@@ -116,8 +130,8 @@ export function createMcpTokenVerifier(deps: {
       const auth: AuthContext = {
         userId: verified.userId,
         apiKeyId: verified.apiKeyId,
-        connectionId: verified.connectionId,
-        sandboxPort: conn.sandboxPort!,
+        defaultConnectionId: primary.id,
+        connections: accessible,
         authType: "oauth",
         clientId: verified.clientId,
         scopes: verified.scopes,

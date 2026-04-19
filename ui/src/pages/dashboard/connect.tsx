@@ -121,6 +121,7 @@ export default function ConnectPage() {
   const navigate = useNavigate();
   const [dbType, setDbType] = useState<DbType>("mongodb");
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [rawUri, setRawUri] = useState("");
   const [parsed, setParsed] = useState<ParsedConnection>({ ...EMPTY, port: "27017" });
   const [error, setError] = useState("");
@@ -177,6 +178,7 @@ export default function ConnectPage() {
       body: JSON.stringify({
         name,
         dbType,
+        description: description.trim() || null,
         connectionString,
         databaseName: parsed.database,
       }),
@@ -244,6 +246,21 @@ export default function ConnectPage() {
                 required
                 autoFocus
               />
+            </div>
+
+            <div>
+              <label htmlFor="description" className="text-sm font-medium">
+                What's in this database?
+              </label>
+              <Input
+                id="description"
+                placeholder="e.g. Customer orders and subscriptions"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                One plain-language sentence. Agents read this to pick the right database when you have more than one connected.
+              </p>
             </div>
 
             <div>
