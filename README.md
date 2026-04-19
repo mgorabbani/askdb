@@ -29,17 +29,17 @@
 
 ## About AskDB
 
-**AskDB** is a self-hosted bridge between your MongoDB database and any AI agent that speaks [MCP](https://modelcontextprotocol.io). It clones your production data into an isolated sandbox, lets you control exactly which fields the AI can see, and exposes a single `/mcp` endpoint that plugs into Claude, ChatGPT, Cursor, and anything else.
+**AskDB** is a self-hosted bridge between your MongoDB or PostgreSQL database and any AI agent that speaks [MCP](https://modelcontextprotocol.io). It clones your production data into an isolated sandbox, lets you control exactly which fields the AI can see, and exposes a single `/mcp` endpoint that plugs into Claude, ChatGPT, Cursor, and anything else.
 
 No data masking. No fake data. Hidden fields are simply omitted from every response — the AI never knows they exist. Every query is audited.
 
-The product is one dashboard, one `/mcp` URL, one SQLite file of config, and a Docker container per connected database. You self-host it on your own VPS with a single `curl | sudo bash` command; AGPLv3 means you can fork it, run it, and modify it — just share changes if you ship a service built on it.
+The product is one dashboard, one `/mcp` URL, one SQLite file of config, and a Docker container per connected database — MongoDB or PostgreSQL, side by side, routed through the same endpoint. You self-host it on your own VPS with a single `curl | sudo bash` command; AGPLv3 means you can fork it, run it, and modify it — just share changes if you ship a service built on it.
 
 ### Get started in 3 steps
 
 |        | Step        | What happens                                                  |
 | ------ | ----------- | ------------------------------------------------------------- |
-| **01** | Connect     | Paste your MongoDB connection string in the dashboard         |
+| **01** | Connect     | Paste your MongoDB or PostgreSQL connection string in the dashboard |
 | **02** | Configure   | Browse real sample data, toggle which fields the AI can see   |
 | **03** | Query       | Give your AI agent `https://<your-domain>/mcp` — done         |
 
@@ -82,8 +82,8 @@ Fields like <code>email</code>, <code>password</code>, <code>ssn</code>, <code>p
 </tr>
 <tr>
 <td align="center">
-<h3>MongoDB-Style MCP</h3>
-Resources plus tools like <code>list-databases</code>, <code>list-collections</code>, <code>collection-schema</code>, <code>find</code>, <code>aggregate</code>, <code>count</code>, <code>distinct</code>, <code>sample-documents</code>, <code>execute-typescript</code>, and <code>save-insight</code>.
+<h3>MongoDB + PostgreSQL MCP</h3>
+One tool surface across engines. Resources plus <code>list-databases</code>, <code>list-collections</code>, <code>collection-schema</code>, <code>find</code>, <code>aggregate</code>, <code>count</code>, <code>distinct</code>, <code>sample-documents</code>, <code>execute-typescript</code>, and <code>save-insight</code>. Postgres tables and Mongo collections are exposed through the same vocabulary.
 </td>
 <td align="center">
 <h3>Query Validation</h3>
@@ -153,12 +153,12 @@ Limits per execution: 30s wall-clock timeout, 128MB memory, 50 bridge calls, 256
 
 ## Multi-Database Discovery
 
-Founders and small teams rarely have just one database. AskDB exposes every database you've connected through the same `/mcp` endpoint, so an agent can decide *which* one to query.
+Founders and small teams rarely have just one database — and often the databases don't even share an engine. AskDB exposes every database you've connected (Mongo and Postgres, side by side) through the same `/mcp` endpoint, so an agent can decide *which* one to query.
 
 - Each connection gets a plain-language description (e.g. "Customer orders and subscriptions") that you write in the dashboard.
-- A new `list-databases` tool and a `databases://overview` resource return a non-technical brief: *this user has 2 databases connected — #1 Orders is for…, #2 CRM is for…*
+- A new `list-databases` tool and a `databases://overview` resource return a non-technical brief: *this user has 2 databases connected — #1 Orders (MongoDB) is for…, #2 Billing (Postgres) is for…*
 - Every query tool (`find`, `aggregate`, `count`, `distinct`, `collection-schema`, `execute-typescript`, `save-insight`) accepts an optional `connectionId`. Omit it when only one database is connected; otherwise pass the ID the agent picked from the overview.
-- Audit logs, query memory, and sandbox routing are scoped per-connection — nothing bleeds between databases.
+- Audit logs, query memory, and sandbox routing are scoped per-connection — nothing bleeds between databases or engines.
 
 <br/>
 
@@ -198,7 +198,7 @@ AskDB's query tools declare a [MCP Apps](https://modelcontextprotocol.io/extensi
 │  └──────────────┘                                 │
 │                          ┌───────────────┐        │
 │                          │  Sandbox      │<── clone from prod
-│                          │  MongoDB      │        │
+│                          │  Mongo / PG   │        │
 │                          └───────────────┘        │
 └─────────────────────────────────────────────────┘
          ^
@@ -206,8 +206,8 @@ AskDB's query tools declare a [MCP Apps](https://modelcontextprotocol.io/extensi
    Claude / ChatGPT / Cursor
 ```
 
-1. **Connect** &mdash; paste your MongoDB connection string
-2. **Clone** &mdash; AskDB runs `mongodump`/`mongorestore` into an isolated Docker container
+1. **Connect** &mdash; paste your MongoDB or PostgreSQL connection string
+2. **Clone** &mdash; AskDB runs the per-engine dump/restore (`mongodump`/`mongorestore` for Mongo, `pg_dump`/`pg_restore` for Postgres) into an isolated Docker container
 3. **Configure** &mdash; browse your schema with real sample data, toggle fields visible or hidden
 4. **Query** &mdash; give your AI agent the MCP URL &mdash; hidden fields are stripped from every response
 
@@ -394,13 +394,13 @@ Add to MCP config:
 Under 10 minutes. Paste your MongoDB URL, configure visibility, copy the MCP URL into your AI tool.
 
 **Does AskDB write to my production database?**
-Never. It connects read-only to run `mongodump`, then all queries go against the sandbox copy.
+Never. It connects read-only to run `mongodump` (Mongo) or `pg_dump` (Postgres), then all queries go against the sandbox copy.
 
 **How is field filtering different from data masking?**
 Data masking replaces values with fakes. AskDB simply omits hidden fields entirely &mdash; the AI doesn't know they exist.
 
-**Can I use this with databases other than MongoDB?**
-Not yet. PostgreSQL and MySQL adapters are on the roadmap. The adapter interface is ready.
+**Which databases are supported?**
+MongoDB and PostgreSQL are both first-class today &mdash; pick the engine when you add a connection, or mix them in the same workspace. MySQL is next on the roadmap. The adapter interface is ready for more.
 
 **How does the sandbox stay fresh?**
 Manual sync &mdash; click "Sync Now" in the dashboard. Scheduled sync is on the roadmap.
@@ -489,7 +489,7 @@ askdb/
 - [x] Code Mode (`execute-typescript` MCP tool with QuickJS-WASM sandbox)
 - [x] Multi-database support (plain-language descriptions, per-tool `connectionId`)
 - [x] MCP Apps result viewer (interactive table inside supporting hosts)
-- [ ] PostgreSQL adapter
+- [x] PostgreSQL adapter (sandbox via `pg_dump`/`pg_restore`, same visibility and query pipeline as Mongo)
 - [ ] MySQL adapter
 - [ ] Multi-user / team management
 - [ ] Sync schedules (6h, 12h, daily, weekly)
