@@ -40,14 +40,18 @@ RUN pnpm -r build
 
 FROM node:22-bookworm-slim AS runtime
 ARG MONGO_TOOLS_VERSION=100.10.0
+ARG PG_MAJOR=17
 ENV NODE_ENV=production \
     PNPM_HOME=/root/.local/share/pnpm \
     PATH=/root/.local/share/pnpm:$PATH \
     PORT=3100 \
     SERVE_UI=1 \
     DATABASE_PATH=/app/data/askdb.db
-# Install runtime deps + mongodb-database-tools (mongodump/mongorestore) used by the sync pipeline.
-# The ubuntu2204 .deb works on bookworm because the bundled binaries are mostly self-contained Go.
+# Install runtime deps + the DB client tools used by sync:
+#   - mongodb-database-tools (mongodump/mongorestore) from the official Mongo .deb
+#   - postgresql-client-${PG_MAJOR} (pg_dump/psql) from the PGDG apt repo
+# PG_MAJOR must be >= the highest PostgreSQL server version askdb is expected to
+# dump from; keep it aligned with the sandbox image in docker/manager.ts.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates tini curl wget; \
@@ -60,6 +64,11 @@ RUN set -eux; \
     curl -fsSL "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-ubuntu2204-${MTARCH}-${MONGO_TOOLS_VERSION}.deb" -o /tmp/mdb-tools.deb; \
     apt-get install -y --no-install-recommends /tmp/mdb-tools.deb; \
     rm /tmp/mdb-tools.deb; \
+    install -d -m 0755 /etc/apt/keyrings; \
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /etc/apt/keyrings/postgresql.asc; \
+    echo "deb [signed-by=/etc/apt/keyrings/postgresql.asc] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends "postgresql-client-${PG_MAJOR}"; \
     rm -rf /var/lib/apt/lists/*; \
     corepack enable; \
     corepack prepare pnpm@10.33.0 --activate
