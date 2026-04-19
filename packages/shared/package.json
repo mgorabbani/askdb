@@ -39,13 +39,13 @@
     "dockerode": "^4.0.10",
     "drizzle-orm": "^0.45.2",
     "mongodb": "^7.1.1",
-    "pg": "^8.13.1"
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/dockerode": "^4.0.1",
     "@types/node": "^25.6.0",
-    "@types/pg": "^8.11.10",
+    "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"

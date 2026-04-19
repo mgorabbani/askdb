@@ -1,20 +1,10 @@
-import type pg from "pg";
+import { Client } from "pg";
 import type { DatabaseAdapter, IntrospectionResult, QueryResult } from "../types.js";
-
-type PgClientCtor = typeof pg.Client;
-let cachedClient: PgClientCtor | null = null;
-async function getClientCtor(): Promise<PgClientCtor> {
-  if (cachedClient) return cachedClient;
-  const mod = await import("pg");
-  cachedClient = (mod as unknown as { default: typeof pg }).default?.Client ?? (mod as unknown as typeof pg).Client;
-  return cachedClient;
-}
 
 const FORBIDDEN_SQL = /\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|COPY|VACUUM|REINDEX|CALL|DO|LOCK|MERGE)\b/i;
 
 export class PostgreSQLAdapter implements DatabaseAdapter {
   async validateConnection(connString: string, databaseName?: string) {
-    const Client = await getClientCtor();
     const client = new Client({
       connectionString: connString,
       database: databaseName,
@@ -35,7 +25,6 @@ export class PostgreSQLAdapter implements DatabaseAdapter {
   }
 
   async getDatabaseSize(connString: string, databaseName?: string) {
-    const Client = await getClientCtor();
     const client = new Client({
       connectionString: connString,
       database: databaseName,
@@ -84,7 +73,6 @@ export class PostgreSQLAdapter implements DatabaseAdapter {
     const check = this.validateQuery(query);
     if (!check.valid) throw new Error(check.error ?? "Invalid query");
 
-    const Client = await getClientCtor();
     const client = new Client({
       connectionString: sandboxConnString,
       connectionTimeoutMillis: 10_000,

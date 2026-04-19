@@ -1,23 +1,13 @@
-import type pg from "pg";
+import { Client } from "pg";
 import { db } from "../../db/index.js";
 import { schemaTables, schemaColumns } from "../../db/schema.js";
 import { detectPii } from "../../pii/patterns.js";
 import { and, eq } from "drizzle-orm";
 import { detectRelationships } from "../mongodb/relationships.js";
 
-type PgClientCtor = typeof pg.Client;
-let cachedClient: PgClientCtor | null = null;
-async function getClientCtor(): Promise<PgClientCtor> {
-  if (cachedClient) return cachedClient;
-  const mod = await import("pg");
-  cachedClient = (mod as unknown as { default: typeof pg }).default?.Client ?? (mod as unknown as typeof pg).Client;
-  return cachedClient;
-}
-
 const EXCLUDED_SCHEMAS = new Set(["pg_catalog", "information_schema", "pg_toast"]);
 
 export async function introspectAndSave(connectionId: string, sandboxUri: string, databaseName?: string) {
-  const Client = await getClientCtor();
   const client = new Client({
     connectionString: sandboxUri,
     database: databaseName,

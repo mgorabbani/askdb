@@ -63,7 +63,7 @@ const DB_CONFIGS: Record<SupportedDbType, DbTypeConfig> = {
     },
   },
   postgresql: {
-    image: "postgres:16-alpine",
+    image: "postgres:17-alpine",
     internalPort: 5432,
     portRangeStart: 54320,
     portRangeEnd: 54419,
@@ -76,6 +76,7 @@ const DB_CONFIGS: Record<SupportedDbType, DbTypeConfig> = {
     connectionString: (host, port) =>
       `postgresql://askdb:askdb@${host}:${port}/postgres`,
     async waitForReady(host, port, timeoutSeconds) {
+      const { Client } = await import("pg");
       const deadline = Date.now() + timeoutSeconds * 1000;
       while (Date.now() < deadline) {
         const open = await new Promise<boolean>((resolve) => {
@@ -93,8 +94,6 @@ const DB_CONFIGS: Record<SupportedDbType, DbTypeConfig> = {
         if (open) {
           // Give Postgres a moment to accept auth after the port opens.
           try {
-            const pg = await import("pg");
-            const Client = (pg as unknown as { default: typeof import("pg") }).default?.Client ?? (pg as unknown as typeof import("pg")).Client;
             const client = new Client({
               connectionString: `postgresql://askdb:askdb@${host}:${port}/postgres`,
               connectionTimeoutMillis: 2000,
