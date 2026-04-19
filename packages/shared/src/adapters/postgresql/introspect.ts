@@ -34,9 +34,12 @@ export async function introspectAndSave(connectionId: string, sandboxUri: string
         : `${row.table_schema}.${row.table_name}`;
       seenTableNames.add(qualifiedName);
 
+      const schemaIdent = quoteIdent(row.table_schema);
+      const tableIdent = quoteIdent(row.table_name);
+
       const countRes = await client
         .query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count FROM "${row.table_schema}"."${row.table_name}"`,
+          `SELECT COUNT(*)::text AS count FROM ${schemaIdent}.${tableIdent}`,
         )
         .catch(() => ({ rows: [{ count: "0" }] as { count: string }[] }));
       const docCount = Number(countRes.rows[0]?.count ?? 0);
@@ -56,7 +59,7 @@ export async function introspectAndSave(connectionId: string, sandboxUri: string
 
       const sampleRes = await client
         .query<Record<string, unknown>>(
-          `SELECT * FROM "${row.table_schema}"."${row.table_name}" LIMIT 1`,
+          `SELECT * FROM ${schemaIdent}.${tableIdent} LIMIT 1`,
         )
         .catch(() => ({ rows: [] as Record<string, unknown>[] }));
       const sampleRow = sampleRes.rows[0] ?? {};
@@ -144,6 +147,10 @@ export async function introspectAndSave(connectionId: string, sandboxUri: string
   } finally {
     await client.end().catch(() => {});
   }
+}
+
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
 }
 
 function mapPgType(dataType: string, udtName: string): string {

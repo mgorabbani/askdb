@@ -91,17 +91,13 @@ connectionsRouter.post("/", async (req, res) => {
 
   const adapter = getAdapter(normalizedDbType);
 
-  const validation = await (adapter as unknown as {
-    validateConnection(connString: string, databaseName?: string): Promise<{ valid: boolean; error?: string }>;
-  }).validateConnection(connectionString, databaseName);
+  const validation = await adapter.validateConnection(connectionString, databaseName);
   if (!validation.valid) {
     res.status(400).json({ error: `Connection failed: ${validation.error}` });
     return;
   }
 
-  const size = await (adapter as unknown as {
-    getDatabaseSize(connString: string, databaseName?: string): Promise<{ sizeBytes: number; collections: number }>;
-  }).getDatabaseSize(connectionString, databaseName);
+  const size = await adapter.getDatabaseSize(connectionString, databaseName);
   if (size.sizeBytes > MAX_DB_SIZE) {
     res.status(400).json({
       error: `Database too large (${formatBytes(size.sizeBytes)}). Maximum is 20GB.`,

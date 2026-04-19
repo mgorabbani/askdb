@@ -1,12 +1,12 @@
 export interface DatabaseAdapter {
   /** Test connection is valid and read-only accessible */
-  validateConnection(connString: string): Promise<{
+  validateConnection(connString: string, databaseName?: string): Promise<{
     valid: boolean;
     error?: string;
   }>;
 
   /** Get database size in bytes and collection count */
-  getDatabaseSize(connString: string): Promise<{
+  getDatabaseSize(connString: string, databaseName?: string): Promise<{
     sizeBytes: number;
     collections: number;
   }>;
