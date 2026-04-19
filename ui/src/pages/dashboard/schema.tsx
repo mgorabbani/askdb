@@ -47,6 +47,11 @@ interface ConnectionMeta {
   dbType: string;
 }
 
+function entityNoun(dbType: string | undefined, plural: boolean): string {
+  if (dbType === "postgresql") return plural ? "tables" : "table";
+  return plural ? "collections" : "collection";
+}
+
 export default function SchemaBrowserPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -216,7 +221,7 @@ export default function SchemaBrowserPage() {
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-          <p className="text-muted-foreground">No collections found. Sync your database first.</p>
+          <p className="text-muted-foreground">No {entityNoun(meta?.dbType, true)} found. Sync your database first.</p>
           <Button onClick={triggerSync} disabled={syncing}>
             {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             {syncing ? "Syncing..." : "Sync Now"}
@@ -262,7 +267,7 @@ export default function SchemaBrowserPage() {
             {meta?.name ?? "Schema Browser"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {tables.length} collections · {visibleCount} visible to the agent
+            {tables.length} {entityNoun(meta?.dbType, true)} · {visibleCount} visible to the agent
           </p>
           {meta && (
             <div className="mt-3 max-w-2xl">

@@ -8,9 +8,11 @@ import { detectRelationships } from "../mongodb/relationships.js";
 const EXCLUDED_SCHEMAS = new Set(["pg_catalog", "information_schema", "pg_toast"]);
 
 export async function introspectAndSave(connectionId: string, sandboxUri: string, databaseName?: string) {
+  // node-postgres ignores the `database` field when a connectionString is set,
+  // so the target db must live in the URI itself or we end up listening on
+  // whatever the URI's pathname says (usually `postgres`).
   const client = new Client({
-    connectionString: sandboxUri,
-    database: databaseName,
+    connectionString: injectDatabase(sandboxUri, databaseName),
     connectionTimeoutMillis: 10_000,
   });
 
@@ -151,6 +153,17 @@ export async function introspectAndSave(connectionId: string, sandboxUri: string
 
 function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+function injectDatabase(uri: string, databaseName?: string): string {
+  if (!databaseName) return uri;
+  try {
+    const url = new URL(uri);
+    url.pathname = "/" + encodeURIComponent(databaseName);
+    return url.toString();
+  } catch {
+    return uri;
+  }
 }
 
 function mapPgType(dataType: string, udtName: string): string {
