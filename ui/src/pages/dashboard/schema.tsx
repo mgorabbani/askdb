@@ -12,7 +12,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronDown, ChevronRight, ShieldAlert, RefreshCw, Loader2, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronRight, ShieldAlert, RefreshCw, Loader2, AlertTriangle, Pencil, Check, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { DeleteConnectionButton } from "@/components/delete-connection-button";
 
 interface SchemaColumn {
@@ -42,6 +43,7 @@ interface SyncStatus {
 interface ConnectionMeta {
   id: string;
   name: string;
+  description: string | null;
   dbType: string;
 }
 
@@ -54,6 +56,9 @@ export default function SchemaBrowserPage() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [meta, setMeta] = useState<ConnectionMeta | null>(null);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [savingDescription, setSavingDescription] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchSchema = useCallback(async () => {
@@ -68,9 +73,32 @@ export default function SchemaBrowserPage() {
     const res = await fetch(`/api/connections/${id}`);
     if (res.ok) {
       const data = await res.json();
-      setMeta({ id: data.id, name: data.name, dbType: data.dbType });
+      setMeta({
+        id: data.id,
+        name: data.name,
+        description: data.description ?? null,
+        dbType: data.dbType,
+      });
     }
   }, [id]);
+
+  async function saveDescription() {
+    if (!id) return;
+    setSavingDescription(true);
+    const res = await fetch(`/api/connections/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: descriptionDraft.trim() || null }),
+    });
+    setSavingDescription(false);
+    if (res.ok) {
+      const data = await res.json();
+      setMeta((prev) =>
+        prev ? { ...prev, description: data.description ?? null } : prev
+      );
+      setEditingDescription(false);
+    }
+  }
 
   const fetchStatus = useCallback(async () => {
     if (!id) return;
@@ -236,6 +264,67 @@ export default function SchemaBrowserPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {tables.length} collections · {visibleCount} visible to the agent
           </p>
+          {meta && (
+            <div className="mt-3 max-w-2xl">
+              {editingDescription ? (
+                <div className="flex items-start gap-2">
+                  <Input
+                    autoFocus
+                    value={descriptionDraft}
+                    onChange={(e) => setDescriptionDraft(e.target.value)}
+                    placeholder="e.g. Customer orders and subscriptions"
+                    disabled={savingDescription}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        saveDescription();
+                      } else if (e.key === "Escape") {
+                        setEditingDescription(false);
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={saveDescription}
+                    disabled={savingDescription}
+                  >
+                    {savingDescription ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Check className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEditingDescription(false)}
+                    disabled={savingDescription}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="group flex items-start gap-2 rounded-md text-left text-sm text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setDescriptionDraft(meta.description ?? "");
+                    setEditingDescription(true);
+                  }}
+                >
+                  <span className="min-w-0 flex-1">
+                    {meta.description || (
+                      <span className="italic">
+                        Add a one-line description so agents know what this database is for…
+                      </span>
+                    )}
+                  </span>
+                  <Pencil className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={triggerSync} disabled={syncing}>

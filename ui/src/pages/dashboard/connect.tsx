@@ -75,6 +75,7 @@ function buildMongoUri(parsed: ParsedConnection): string {
 export default function ConnectPage() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [rawUri, setRawUri] = useState("");
   const [parsed, setParsed] = useState<ParsedConnection>({
     host: "",
@@ -120,7 +121,12 @@ export default function ConnectPage() {
     const res = await fetch("/api/connections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, connectionString, databaseName: parsed.database }),
+      body: JSON.stringify({
+        name,
+        description: description.trim() || null,
+        connectionString,
+        databaseName: parsed.database,
+      }),
     });
 
     const data = await res.json();
@@ -162,6 +168,21 @@ export default function ConnectPage() {
                 required
                 autoFocus
               />
+            </div>
+
+            <div>
+              <label htmlFor="description" className="text-sm font-medium">
+                What's in this database?
+              </label>
+              <Input
+                id="description"
+                placeholder="e.g. Customer orders and subscriptions"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                One plain-language sentence. Agents read this to pick the right database when you have more than one connected.
+              </p>
             </div>
 
             <div>

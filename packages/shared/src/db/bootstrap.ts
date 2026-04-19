@@ -1,5 +1,6 @@
 interface SqliteExecDatabase {
   exec(sql: string): unknown;
+  prepare?(sql: string): { all(...params: unknown[]): unknown[] };
 }
 
 // Idempotent. Runs on every server startup via getDb() and on every test fixture.
@@ -60,6 +61,7 @@ export function ensureDatabaseSchema(sqlite: SqliteExecDatabase) {
     CREATE TABLE IF NOT EXISTS connections (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
+      description TEXT,
       dbType TEXT NOT NULL DEFAULT 'mongodb',
       databaseName TEXT NOT NULL DEFAULT '',
       connectionString TEXT NOT NULL,
@@ -212,4 +214,23 @@ export function ensureDatabaseSchema(sqlite: SqliteExecDatabase) {
       apiKeyId TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE
     );
   `);
+
+  // Idempotent column additions for pre-existing DBs. SQLite's CREATE TABLE IF
+  // NOT EXISTS does not add new columns to tables that already exist, so any
+  // column introduced after the initial schema must be migrated here.
+  addColumnIfMissing(sqlite, "connections", "description", "TEXT");
+}
+
+function addColumnIfMissing(
+  sqlite: SqliteExecDatabase,
+  table: string,
+  column: string,
+  definition: string
+) {
+  if (!sqlite.prepare) return;
+  const cols = sqlite.prepare(`PRAGMA table_info(${table})`).all() as {
+    name: string;
+  }[];
+  if (cols.some((c) => c.name === column)) return;
+  sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }

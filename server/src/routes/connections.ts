@@ -49,7 +49,9 @@ connectionsRouter.get("/", async (req, res) => {
     .select({
       id: connections.id,
       name: connections.name,
+      description: connections.description,
       dbType: connections.dbType,
+      databaseName: connections.databaseName,
       syncStatus: connections.syncStatus,
       lastSyncAt: connections.lastSyncAt,
       sandboxPort: connections.sandboxPort,
@@ -62,10 +64,11 @@ connectionsRouter.get("/", async (req, res) => {
 
 connectionsRouter.post("/", async (req, res) => {
   const r = req as AuthedRequest;
-  const { name, connectionString, databaseName } = req.body as {
+  const { name, connectionString, databaseName, description } = req.body as {
     name?: string;
     connectionString?: string;
     databaseName?: string;
+    description?: string | null;
   };
 
   if (!name || !connectionString) {
@@ -100,6 +103,7 @@ connectionsRouter.post("/", async (req, res) => {
     .insert(connections)
     .values({
       name,
+      description: description?.trim() || null,
       dbType: "mongodb",
       databaseName,
       connectionString: encrypt(connectionString),
@@ -127,7 +131,9 @@ connectionsRouter.get("/:id", async (req, res) => {
     .select({
       id: connections.id,
       name: connections.name,
+      description: connections.description,
       dbType: connections.dbType,
+      databaseName: connections.databaseName,
       syncStatus: connections.syncStatus,
       syncError: connections.syncError,
       lastSyncAt: connections.lastSyncAt,
@@ -143,6 +149,54 @@ connectionsRouter.get("/:id", async (req, res) => {
     return;
   }
   res.json(conn);
+});
+
+connectionsRouter.patch("/:id", async (req, res) => {
+  const r = req as AuthedRequest;
+  const conn = await loadOwnedConnection(r, req.params.id);
+  if (!conn) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  const { name, description } = req.body as {
+    name?: string;
+    description?: string | null;
+  };
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (typeof name === "string") {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      res.status(400).json({ error: "Name cannot be empty" });
+      return;
+    }
+    updates.name = trimmed;
+  }
+  if (description !== undefined) {
+    updates.description =
+      typeof description === "string" && description.trim()
+        ? description.trim()
+        : null;
+  }
+
+  if (Object.keys(updates).length <= 1) {
+    res.status(400).json({ error: "No valid fields to update" });
+    return;
+  }
+
+  const [updated] = await db
+    .update(connections)
+    .set(updates)
+    .where(eq(connections.id, req.params.id))
+    .returning({
+      id: connections.id,
+      name: connections.name,
+      description: connections.description,
+      databaseName: connections.databaseName,
+    });
+
+  res.json(updated);
 });
 
 connectionsRouter.delete("/:id", async (req, res) => {

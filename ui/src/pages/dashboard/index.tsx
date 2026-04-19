@@ -15,7 +15,9 @@ import {
 interface Connection {
   id: string;
   name: string;
+  description: string | null;
   dbType: string;
+  databaseName: string;
   syncStatus: string;
   lastSyncAt: string | null;
   sandboxPort: number | null;
@@ -192,6 +194,12 @@ function ConnectionCard({ conn }: { conn: Connection }) {
           </div>
           <SyncPill status={conn.syncStatus} />
         </div>
+
+        {conn.description && (
+          <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">
+            {conn.description}
+          </p>
+        )}
 
         <div className="mt-5 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">

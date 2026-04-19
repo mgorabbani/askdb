@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildConfigResourcePayload,
+  buildDatabasesOverviewMarkdown,
   buildDebugResourcePayload,
   buildInitializeInstructions,
   buildInsightsResourceMarkdown,
@@ -82,4 +83,42 @@ test("resource and instruction builders expose the MongoDB-style contract", () =
   assert.match(insights, /# Saved Insights/);
   assert.match(insights, /Use collection-schema before aggregate/);
   assert.equal(debug.debug.lastTool, "aggregate");
+});
+
+test("buildInitializeInstructions nudges agents to pick a DB when multiple are connected", () => {
+  const instructions = buildInitializeInstructions([], [
+    { id: "c1", name: "Orders", description: "Customer orders", databaseName: "orders_prod" },
+    { id: "c2", name: "CRM", description: null, databaseName: "crm" },
+  ]);
+  assert.match(instructions, /2 databases connected/);
+  assert.match(instructions, /databases:\/\/overview/);
+});
+
+test("buildDatabasesOverviewMarkdown renders plain-language entries per DB", () => {
+  const md = buildDatabasesOverviewMarkdown([
+    {
+      id: "conn_orders",
+      name: "Orders",
+      description: "Customer orders and subscriptions",
+      databaseName: "orders_prod",
+    },
+    {
+      id: "conn_crm",
+      name: "CRM",
+      description: null,
+      databaseName: "crm",
+    },
+  ]);
+
+  assert.match(md, /# Databases/);
+  assert.match(md, /## 1\. Orders/);
+  assert.match(md, /Customer orders and subscriptions/);
+  assert.match(md, /conn_orders/);
+  assert.match(md, /## 2\. CRM/);
+  assert.match(md, /No description yet/);
+});
+
+test("buildDatabasesOverviewMarkdown handles empty state", () => {
+  const md = buildDatabasesOverviewMarkdown([]);
+  assert.match(md, /No databases are connected/);
 });

@@ -16,6 +16,7 @@ interface ParsedQuery {
   pipeline?: Record<string, unknown>[];
   field?: string;
   limit?: number;
+  connectionId?: string;
 }
 
 interface ToolTextContent {
@@ -100,8 +101,16 @@ function unwrap(result: ToolResult): unknown {
   }
 }
 
-/** Build the four external_* functions exposed inside the sandbox. */
-export function makeBridge(execute: ExecuteQueryOperation): CodeModeBridge {
+/**
+ * Build the four external_* functions exposed inside the sandbox. The
+ * execute-typescript tool resolves a target database before entering the
+ * sandbox and passes its connectionId here so every bridge call routes to the
+ * same database without the guest needing to thread it through.
+ */
+export function makeBridge(
+  execute: ExecuteQueryOperation,
+  connectionId?: string
+): CodeModeBridge {
   return {
     external_find: async (rawArgs) => {
       const args = asObject(rawArgs, "external_find") as BaseArgs;
@@ -110,6 +119,7 @@ export function makeBridge(execute: ExecuteQueryOperation): CodeModeBridge {
         operation: "find",
         filter: asOptionalRecord(args.filter, "external_find"),
         limit: asOptionalNumber(args.limit, "external_find"),
+        connectionId,
       };
       return unwrap(await execute("code-mode:find", parsed));
     },
@@ -121,6 +131,7 @@ export function makeBridge(execute: ExecuteQueryOperation): CodeModeBridge {
         operation: "aggregate",
         pipeline: asPipeline(args.pipeline, "external_aggregate"),
         limit: asOptionalNumber(args.limit, "external_aggregate"),
+        connectionId,
       };
       return unwrap(await execute("code-mode:aggregate", parsed));
     },
@@ -131,6 +142,7 @@ export function makeBridge(execute: ExecuteQueryOperation): CodeModeBridge {
         collection: asString(args.collection, "external_count: collection"),
         operation: "count",
         filter: asOptionalRecord(args.filter, "external_count"),
+        connectionId,
       };
       return unwrap(await execute("code-mode:count", parsed));
     },
@@ -143,6 +155,7 @@ export function makeBridge(execute: ExecuteQueryOperation): CodeModeBridge {
         field: asString(args.field, "external_distinct: field"),
         filter: asOptionalRecord(args.filter, "external_distinct"),
         limit: asOptionalNumber(args.limit, "external_distinct"),
+        connectionId,
       };
       return unwrap(await execute("code-mode:distinct", parsed));
     },
