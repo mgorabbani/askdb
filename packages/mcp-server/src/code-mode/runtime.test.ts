@@ -240,7 +240,24 @@ test("makeBridge enforces bridge call shape and unwraps MCP results", async () =
     operation: "find",
     filter: { active: true },
     limit: 10,
+    connectionId: undefined,
   });
+});
+
+test("makeBridge forwards its connectionId so sandbox calls hit the chosen DB", async () => {
+  const calls: { tool: string; parsed: unknown }[] = [];
+  const fakeExecute: ExecuteQueryOperation = async (toolName, parsed) => {
+    calls.push({ tool: toolName, parsed });
+    return { content: [{ type: "text" as const, text: "[]" }] };
+  };
+
+  const bridge = makeBridge(fakeExecute, "conn_multi");
+  await bridge.external_find({ collection: "users" });
+
+  assert.equal(
+    (calls[0]?.parsed as { connectionId?: string }).connectionId,
+    "conn_multi"
+  );
 });
 
 test("makeBridge throws when the underlying tool returns an error", async () => {

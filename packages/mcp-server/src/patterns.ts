@@ -9,6 +9,13 @@ export interface InitializeInsight {
   insight: string;
 }
 
+export interface DatabaseSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  databaseName: string;
+}
+
 export interface ConfigResourcePayloadInput {
   connectionId: string;
   disabledItems: Iterable<string>;
@@ -78,16 +85,30 @@ export function isToolEnabled(
 }
 
 export function buildInitializeInstructions(
-  insights: InitializeInsight[]
+  insights: InitializeInsight[],
+  databases: DatabaseSummary[] = []
 ): string {
   const lines = [
     "askdb follows MongoDB MCP patterns with askdb-specific safety and memory extensions.",
-    "Preferred workflow: read `schema://overview` or call `list-collections`, then call `collection-schema` for an unfamiliar collection, then use `find`, `aggregate`, `count`, or `distinct`.",
+  ];
+
+  if (databases.length > 1) {
+    lines.push(
+      `This user has ${databases.length} databases connected. Start by reading \`databases://overview\` or calling \`list-databases\` to see what each one is for, then pass \`connectionId\` to the other tools to target a specific database.`
+    );
+  } else if (databases.length === 1) {
+    lines.push(
+      "This user has one database connected; `connectionId` can be omitted on every tool call."
+    );
+  }
+
+  lines.push(
+    "Preferred workflow: read `databases://overview` (and `schema://overview` for a single DB) or call `list-databases` / `list-collections`, then call `collection-schema` for an unfamiliar collection, then use `find`, `aggregate`, `count`, or `distinct`.",
     "Prefer the specific query tools over the low-level `query` compatibility tool.",
     "All collection and field visibility rules are enforced server-side. Hidden fields never appear in query results or schema outputs.",
     "Use `sample-documents` only when you need raw examples after reviewing schema metadata.",
-    "Use `save-insight` only after a successful session to store durable gotchas, patterns, or tips for future agents.",
-  ];
+    "Use `save-insight` only after a successful session to store durable gotchas, patterns, or tips for future agents."
+  );
 
   const gotchas = insights
     .filter((insight) => insight.category === "gotcha")
@@ -107,6 +128,50 @@ export function buildInitializeInstructions(
   }
 
   return lines.join("\n");
+}
+
+/**
+ * Plain-language brief the agent reads first. Each database gets a short entry
+ * with its purpose so the agent can decide where to look before querying.
+ */
+export function buildDatabasesOverviewMarkdown(
+  databases: DatabaseSummary[]
+): string {
+  if (databases.length === 0) {
+    return [
+      "# Databases",
+      "",
+      "No databases are connected yet. Ask the user to connect one in the askdb dashboard before running queries.",
+    ].join("\n");
+  }
+
+  const header = [
+    "# Databases",
+    "",
+    databases.length === 1
+      ? "This user has one database connected."
+      : `This user has ${databases.length} databases connected. Pick the one whose description best matches the question, then pass its \`connectionId\` to any tool call. You can also query across multiple databases by running tools once per \`connectionId\`.`,
+    "",
+  ];
+
+  const entries = databases.map((db, index) => {
+    const lines: string[] = [];
+    lines.push(`## ${index + 1}. ${db.name}`);
+    lines.push("");
+    lines.push(
+      `- **connectionId**: \`${db.id}\` (pass this to any query tool to target this database)`
+    );
+    lines.push(`- **Database name**: \`${db.databaseName}\``);
+    lines.push(
+      `- **What it contains**: ${
+        db.description?.trim() ||
+        "_No description yet. Ask the user to add one in the askdb dashboard so agents can tell this database apart._"
+      }`
+    );
+    return lines.join("\n");
+  });
+
+  return [...header, entries.join("\n\n")].join("\n");
 }
 
 export function buildConfigResourcePayload(

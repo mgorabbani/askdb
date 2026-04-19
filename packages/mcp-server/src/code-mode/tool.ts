@@ -87,9 +87,22 @@ export interface ExecuteTypescriptHooks {
   rememberError: (toolName: string, message: string) => void;
 }
 
+export interface ResolvedConnection {
+  id: string;
+  name: string;
+}
+
+export type ConnectionResolver = (
+  connectionId?: string
+) =>
+  | { ok: true; connection: ResolvedConnection }
+  | { ok: false; error: string };
+
 export interface ExecuteTypescriptOptions {
   server: McpServer;
-  auth: { connectionId: string; apiKeyId: string };
+  apiKeyId: string;
+  resolveConnection: ConnectionResolver;
+  hasMultipleConnections: boolean;
   executeQueryOperation: ExecuteQueryOperation;
   hooks: ExecuteTypescriptHooks;
   limits?: CodeModeLimits;
@@ -97,18 +110,22 @@ export interface ExecuteTypescriptOptions {
 
 export function registerExecuteTypescriptTool({
   server,
-  auth,
+  apiKeyId,
+  resolveConnection,
+  hasMultipleConnections,
   executeQueryOperation,
   hooks,
   limits = DEFAULT_LIMITS,
 }: ExecuteTypescriptOptions): void {
-  const bridge = makeBridge(executeQueryOperation);
-
   server.registerTool(
     "execute-typescript",
     {
       title: "Execute TypeScript (Code Mode)",
-      description: TYPESCRIPT_TOOL_DESCRIPTION,
+      description:
+        TYPESCRIPT_TOOL_DESCRIPTION +
+        (hasMultipleConnections
+          ? "\n\nThis user has multiple databases connected. Pass `connectionId` to scope every external_* call inside the sandbox to the chosen database. Run the tool once per database if you need cross-DB composition."
+          : ""),
       annotations: { readOnlyHint: true },
       inputSchema: {
         source: z
@@ -117,21 +134,33 @@ export function registerExecuteTypescriptTool({
           .describe(
             "TypeScript source. Use top-level await and `return value` to emit a result."
           ),
+        connectionId: z
+          .string()
+          .optional()
+          .describe(
+            "Which database the external_* calls target. Omit when only one database is connected."
+          ),
       },
     },
-    async ({ source }) => {
+    async ({ source, connectionId }) => {
+      const resolved = resolveConnection(connectionId);
+      if (!resolved.ok) {
+        hooks.rememberError("execute-typescript", resolved.error);
+        return {
+          content: [{ type: "text" as const, text: resolved.error }],
+          isError: true,
+        };
+      }
+      const conn = resolved.connection;
+      const bridge = makeBridge(executeQueryOperation, conn.id);
+
       const result = await runCodeMode(source, bridge, limits);
 
-      hooks.writeAuditLog(
-        "execute-typescript",
-        auth.connectionId,
-        auth.apiKeyId,
-        {
-          query: source,
-          executionMs: result.durationMs,
-          docCount: result.bridgeCalls.length,
-        }
-      );
+      hooks.writeAuditLog("execute-typescript", conn.id, apiKeyId, {
+        query: source,
+        executionMs: result.durationMs,
+        docCount: result.bridgeCalls.length,
+      });
 
       if (!result.ok) {
         hooks.rememberError(

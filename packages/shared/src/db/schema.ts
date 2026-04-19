@@ -57,6 +57,7 @@ export const verification = sqliteTable("verification", {
 export const connections = sqliteTable("connections", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(),
+  description: text("description"), // user-editable summary shown to MCP clients so agents can pick the right DB
   dbType: text("dbType").notNull().default("mongodb"),
   databaseName: text("databaseName").notNull().default(""),
   connectionString: text("connectionString").notNull(), // AES-256-GCM encrypted
