@@ -114,7 +114,8 @@
       .wrap {
         max-width: 1180px;
         margin: 0 auto;
-        padding: 0 24px;
+        padding-left: 24px;
+        padding-right: 24px;
       }
 
       /* ===== NAV ===== */
@@ -163,8 +164,9 @@
       .nav-links a:hover { color: var(--text); }
 
       @media (max-width: 640px) {
-        .brand img { height: 44px; }
-        .brand span { display: none; }
+        nav { padding: 16px; }
+        .brand { font-size: 18px; gap: 10px; }
+        .brand img { height: 40px; }
         .nav-links a:not(.btn) { display: none; }
       }
 
@@ -215,7 +217,8 @@
 
       /* ===== HERO ===== */
       .hero {
-        padding: 80px 0 60px;
+        padding-top: 80px;
+        padding-bottom: 60px;
         text-align: center;
       }
 
@@ -344,7 +347,8 @@
 
       /* ===== SECTIONS ===== */
       section {
-        padding: var(--gap-section) 0;
+        padding-top: var(--gap-section);
+        padding-bottom: var(--gap-section);
         position: relative;
       }
 
@@ -1078,7 +1082,8 @@
       /* ===== CTA + FOOTER ===== */
       .final-cta {
         text-align: center;
-        padding: 100px 0 120px;
+        padding-top: 100px;
+        padding-bottom: 120px;
       }
 
       .final-cta p {
