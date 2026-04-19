@@ -40,6 +40,14 @@ import {
 } from "./patterns.js";
 
 import { registerExecuteTypescriptTool } from "./code-mode/tool.js";
+import {
+  RESULT_VIEWER_URI,
+  buildStructuredResult,
+  resultViewerHtml,
+  resultViewerResourceMeta,
+  resultViewerToolMeta,
+  type StructuredResult,
+} from "./mcp-apps/viewer.js";
 
 export { createMcpTokenVerifier } from "./token-verifier.js";
 
@@ -365,6 +373,7 @@ function createMcpServer(auth: AuthContext): McpServer {
     "insights://global",
     "config://config",
     "debug://askdb",
+    RESULT_VIEWER_URI,
   ];
   const toolNames: string[] = [];
   const debugState = {
@@ -544,10 +553,19 @@ function createMcpServer(auth: AuthContext): McpServer {
       recordQueryPattern(conn.id, serializedQuery);
       rememberSuccess(toolName);
 
+      const structured: StructuredResult = buildStructuredResult(cleaned, {
+        collection,
+        connectionId: conn.id,
+        connectionName: conn.name,
+        operation,
+        truncated: cleaned.length >= maxDocs,
+      });
+
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(cleaned, null, 2) },
         ],
+        structuredContent: structured as unknown as Record<string, unknown>,
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -672,6 +690,27 @@ function createMcpServer(auth: AuthContext): McpServer {
             null,
             2
           ),
+        },
+      ],
+    })
+  );
+
+  server.registerResource(
+    "result-viewer",
+    RESULT_VIEWER_URI,
+    {
+      title: "Result Viewer",
+      description:
+        "MCP Apps UI that renders find/aggregate/sample-documents results as an interactive table. Hosts without MCP Apps support ignore this resource.",
+      mimeType: "text/html",
+      _meta: resultViewerResourceMeta(),
+    },
+    async () => ({
+      contents: [
+        {
+          uri: RESULT_VIEWER_URI,
+          mimeType: "text/html",
+          text: resultViewerHtml(),
         },
       ],
     })
@@ -931,6 +970,7 @@ function createMcpServer(auth: AuthContext): McpServer {
         description:
           "Run a read-only MongoDB find query. Prefer this over the low-level query tool for standard document retrieval.",
         annotations: { readOnlyHint: true },
+        _meta: resultViewerToolMeta(),
         inputSchema: {
           collection: z.string().describe("The collection to query"),
           filter: z.record(z.string(), z.unknown()).optional(),
@@ -968,6 +1008,7 @@ function createMcpServer(auth: AuthContext): McpServer {
         description:
           "Run a read-only MongoDB aggregation pipeline. Use collection-schema first for field names, relationships, and known gotchas.",
         annotations: { readOnlyHint: true },
+        _meta: resultViewerToolMeta(),
         inputSchema: {
           collection: z.string().describe("The collection to query"),
           pipeline: z
@@ -1081,6 +1122,7 @@ function createMcpServer(auth: AuthContext): McpServer {
         description:
           "Get random sample documents from a collection using $sample. Use this after reviewing schema metadata when you need raw document examples.",
         annotations: { readOnlyHint: true },
+        _meta: resultViewerToolMeta(),
         inputSchema: {
           collection: z.string().describe("The collection to sample from"),
           limit: z
@@ -1136,10 +1178,19 @@ function createMcpServer(auth: AuthContext): McpServer {
           });
           rememberSuccess("sample-documents");
 
+          const structured = buildStructuredResult(cleaned, {
+            collection,
+            connectionId: conn.id,
+            connectionName: conn.name,
+            operation: "sample",
+            truncated: cleaned.length >= sampleSize,
+          });
+
           return {
             content: [
               { type: "text" as const, text: JSON.stringify(cleaned, null, 2) },
             ],
+            structuredContent: structured as unknown as Record<string, unknown>,
           };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);

@@ -83,7 +83,7 @@ Fields like <code>email</code>, <code>password</code>, <code>ssn</code>, <code>p
 <tr>
 <td align="center">
 <h3>MongoDB-Style MCP</h3>
-Resources plus tools like <code>list-collections</code>, <code>collection-schema</code>, <code>find</code>, <code>aggregate</code>, <code>count</code>, <code>distinct</code>, <code>sample-documents</code>, <code>execute-typescript</code>, and <code>save-insight</code>.
+Resources plus tools like <code>list-databases</code>, <code>list-collections</code>, <code>collection-schema</code>, <code>find</code>, <code>aggregate</code>, <code>count</code>, <code>distinct</code>, <code>sample-documents</code>, <code>execute-typescript</code>, and <code>save-insight</code>.
 </td>
 <td align="center">
 <h3>Query Validation</h3>
@@ -106,6 +106,16 @@ Common query patterns are tracked automatically. Agents learn your database over
 <td align="center">
 <h3>Schema Cache</h3>
 Full schema summary with field types, relationships, and descriptions &mdash; agents understand your data without querying every time.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>Multi-Database</h3>
+Connect every database you own. Each one gets a plain-language description so agents know what's where. Every query tool accepts a <code>connectionId</code> to target the right one.
+</td>
+<td align="center" colspan="2">
+<h3>MCP Apps</h3>
+<code>find</code>, <code>aggregate</code>, and <code>sample-documents</code> ship an interactive result table via the <a href="https://modelcontextprotocol.io/extensions/apps">MCP Apps</a> UI extension. Hosts without support fall back to plain text.
 </td>
 </tr>
 </table>
@@ -138,6 +148,27 @@ return top.map((p, i) => ({
 ```
 
 Limits per execution: 30s wall-clock timeout, 128MB memory, 50 bridge calls, 256KB serialized result. Disable the tool entirely by adding `execute-typescript` to `ASKDB_MCP_DISABLED_TOOLS`.
+
+<br/>
+
+## Multi-Database Discovery
+
+Founders and small teams rarely have just one database. AskDB exposes every database you've connected through the same `/mcp` endpoint, so an agent can decide *which* one to query.
+
+- Each connection gets a plain-language description (e.g. "Customer orders and subscriptions") that you write in the dashboard.
+- A new `list-databases` tool and a `databases://overview` resource return a non-technical brief: *this user has 2 databases connected — #1 Orders is for…, #2 CRM is for…*
+- Every query tool (`find`, `aggregate`, `count`, `distinct`, `collection-schema`, `execute-typescript`, `save-insight`) accepts an optional `connectionId`. Omit it when only one database is connected; otherwise pass the ID the agent picked from the overview.
+- Audit logs, query memory, and sandbox routing are scoped per-connection — nothing bleeds between databases.
+
+<br/>
+
+## MCP Apps
+
+AskDB's query tools declare a [MCP Apps](https://modelcontextprotocol.io/extensions/apps) UI resource (`ui://askdb/result-viewer`). Hosts that support MCP Apps — Claude Desktop, Claude on web, VS Code Copilot, and others — render `find`, `aggregate`, and `sample-documents` results as an interactive table with filter and column view inside the conversation, instead of dumping raw JSON into the transcript.
+
+- The tool result still includes the full JSON text as `content`, so non-Apps clients keep working exactly as before.
+- The iframe is sandboxed by the host; AskDB never sees the user's host window.
+- The viewer reads `structuredContent` pushed to it via the spec's `ui/notifications/tool-result` channel (spec version `2026-01-26`).
 
 <br/>
 
@@ -456,6 +487,8 @@ askdb/
 - [x] Schema cache for agent context
 - [x] CLI tool
 - [x] Code Mode (`execute-typescript` MCP tool with QuickJS-WASM sandbox)
+- [x] Multi-database support (plain-language descriptions, per-tool `connectionId`)
+- [x] MCP Apps result viewer (interactive table inside supporting hosts)
 - [ ] PostgreSQL adapter
 - [ ] MySQL adapter
 - [ ] Multi-user / team management
