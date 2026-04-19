@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 
 import express from "express";
 import { MongoClient, type Db as MongoDb } from "mongodb";
+import { Client as PgClient } from "pg";
 import { z } from "zod";
 import { existsSync } from "fs";
 
@@ -52,6 +53,7 @@ import {
 export { createMcpTokenVerifier } from "./token-verifier.js";
 
 import type { AccessibleConnection, AuthContext } from "./token-verifier.js";
+import { normalizeDbType } from "./token-verifier.js";
 
 const MONGO_HOST = existsSync("/.dockerenv") ? "host.docker.internal" : "localhost";
 
@@ -86,6 +88,50 @@ async function getMongoDb(port: number): Promise<MongoDb> {
     (d) => !["admin", "local", "config"].includes(d.name)
   );
   return client.db(userDb?.name ?? "test");
+}
+
+// ── PostgreSQL helpers ──────────────────────────────────────────────
+
+const pgClients = new Map<string, PgClient>();
+
+async function getPgClient(
+  sandboxPort: number,
+  databaseName: string
+): Promise<PgClient> {
+  const key = `${sandboxPort}:${databaseName}`;
+  let client = pgClients.get(key);
+  if (client) return client;
+
+  client = new PgClient({
+    host: MONGO_HOST,
+    port: sandboxPort,
+    user: "askdb",
+    password: "askdb",
+    database: databaseName,
+    connectionTimeoutMillis: 5000,
+    statement_timeout: 10_000,
+  });
+  client.on("error", (err) => {
+    console.error(`[mcp] pg client error port=${sandboxPort} db=${databaseName}:`, err);
+    pgClients.delete(key);
+  });
+  await client.connect();
+  pgClients.set(key, client);
+  return client;
+}
+
+function quotePgIdent(ident: string): string {
+  return `"${ident.replace(/"/g, '""')}"`;
+}
+
+// Collection names from introspection are either "table" (public schema) or
+// "schema.table". Split so we can quote each part separately.
+function resolvePgCollection(collection: string): string {
+  const dot = collection.indexOf(".");
+  if (dot === -1) return `${quotePgIdent("public")}.${quotePgIdent(collection)}`;
+  const schemaName = collection.slice(0, dot);
+  const tableName = collection.slice(dot + 1);
+  return `${quotePgIdent(schemaName)}.${quotePgIdent(tableName)}`;
 }
 
 // ── Schema helpers ──────────────────────────────────────────────────
@@ -479,65 +525,147 @@ function createMcpServer(auth: AuthContext): McpServer {
     const maxDocs = Math.min(limit ?? 500, 500);
 
     try {
-      const mongoDb = await getMongoDb(conn.sandboxPort);
-      const coll = mongoDb.collection(collection);
       let docs: Record<string, unknown>[];
 
-      switch (operation) {
-        case "find": {
-          docs = (await coll
-            .find(filter ?? {})
-            .limit(maxDocs)
-            .maxTimeMS(10_000)
-            .toArray()) as Record<string, unknown>[];
+      switch (conn.dbType) {
+        case "mongodb": {
+          const mongoDb = await getMongoDb(conn.sandboxPort);
+          const coll = mongoDb.collection(collection);
+
+          switch (operation) {
+            case "find": {
+              docs = (await coll
+                .find(filter ?? {})
+                .limit(maxDocs)
+                .maxTimeMS(10_000)
+                .toArray()) as Record<string, unknown>[];
+              break;
+            }
+            case "aggregate": {
+              docs = (await coll
+                .aggregate(pipeline ?? [], { maxTimeMS: 10_000 })
+                .toArray()) as Record<string, unknown>[];
+              docs = docs.slice(0, maxDocs);
+              break;
+            }
+            case "count": {
+              const count = await coll.countDocuments(filter ?? {}, {
+                maxTimeMS: 10_000,
+              });
+              const elapsed = Date.now() - start;
+              writeAuditLog(toolName, conn.id, auth.apiKeyId, {
+                query: serializedQuery,
+                collection,
+                executionMs: elapsed,
+                docCount: 1,
+              });
+              recordQueryPattern(conn.id, serializedQuery);
+              rememberSuccess(toolName);
+              return {
+                content: [{ type: "text" as const, text: JSON.stringify({ count }) }],
+              };
+            }
+            case "distinct": {
+              const values = await coll.distinct(field ?? "_id", filter ?? {}, {
+                maxTimeMS: 10_000,
+              });
+              const limited = values.slice(0, maxDocs);
+              const elapsed = Date.now() - start;
+              writeAuditLog(toolName, conn.id, auth.apiKeyId, {
+                query: serializedQuery,
+                collection,
+                executionMs: elapsed,
+                docCount: limited.length,
+              });
+              recordQueryPattern(conn.id, serializedQuery);
+              rememberSuccess(toolName);
+              return {
+                content: [
+                  { type: "text" as const, text: JSON.stringify(limited, null, 2) },
+                ],
+              };
+            }
+            default:
+              return toolError(toolName, `Unsupported operation: ${operation}`);
+          }
           break;
         }
-        case "aggregate": {
-          docs = (await coll
-            .aggregate(pipeline ?? [], { maxTimeMS: 10_000 })
-            .toArray()) as Record<string, unknown>[];
-          docs = docs.slice(0, maxDocs);
+        case "postgresql": {
+          const filterIsEmpty = !filter || Object.keys(filter).length === 0;
+          if (!filterIsEmpty) {
+            return toolError(
+              toolName,
+              `Filter translation is not supported for PostgreSQL connections. Use the execute-typescript tool with a SQL query instead.`
+            );
+          }
+          if (operation === "aggregate") {
+            return toolError(
+              toolName,
+              `The aggregate operation is not supported for PostgreSQL connections. Use the execute-typescript tool with a SQL query instead.`
+            );
+          }
+
+          const pg = await getPgClient(conn.sandboxPort, conn.databaseName);
+          const qualified = resolvePgCollection(collection);
+
+          switch (operation) {
+            case "find": {
+              const res = await pg.query<Record<string, unknown>>(
+                `SELECT * FROM ${qualified} LIMIT ${maxDocs}`
+              );
+              docs = res.rows;
+              break;
+            }
+            case "count": {
+              const res = await pg.query<{ count: string }>(
+                `SELECT COUNT(*)::text AS count FROM ${qualified}`
+              );
+              const count = Number(res.rows[0]?.count ?? 0);
+              const elapsed = Date.now() - start;
+              writeAuditLog(toolName, conn.id, auth.apiKeyId, {
+                query: serializedQuery,
+                collection,
+                executionMs: elapsed,
+                docCount: 1,
+              });
+              recordQueryPattern(conn.id, serializedQuery);
+              rememberSuccess(toolName);
+              return {
+                content: [{ type: "text" as const, text: JSON.stringify({ count }) }],
+              };
+            }
+            case "distinct": {
+              if (!field) {
+                return toolError(toolName, `distinct requires a field.`);
+              }
+              const res = await pg.query<Record<string, unknown>>(
+                `SELECT DISTINCT ${quotePgIdent(field)} AS value FROM ${qualified} LIMIT ${maxDocs}`
+              );
+              const limited = res.rows.map((r) => r.value);
+              const elapsed = Date.now() - start;
+              writeAuditLog(toolName, conn.id, auth.apiKeyId, {
+                query: serializedQuery,
+                collection,
+                executionMs: elapsed,
+                docCount: limited.length,
+              });
+              recordQueryPattern(conn.id, serializedQuery);
+              rememberSuccess(toolName);
+              return {
+                content: [
+                  { type: "text" as const, text: JSON.stringify(limited, null, 2) },
+                ],
+              };
+            }
+            default:
+              return toolError(toolName, `Unsupported operation: ${operation}`);
+          }
           break;
         }
-        case "count": {
-          const count = await coll.countDocuments(filter ?? {}, {
-            maxTimeMS: 10_000,
-          });
-          const elapsed = Date.now() - start;
-          writeAuditLog(toolName, conn.id, auth.apiKeyId, {
-            query: serializedQuery,
-            collection,
-            executionMs: elapsed,
-            docCount: 1,
-          });
-          recordQueryPattern(conn.id, serializedQuery);
-          rememberSuccess(toolName);
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ count }) }],
-          };
+        default: {
+          const _exhaustive: never = conn.dbType;
+          return toolError(toolName, `Unsupported database type: ${_exhaustive}`);
         }
-        case "distinct": {
-          const values = await coll.distinct(field ?? "_id", filter ?? {}, {
-            maxTimeMS: 10_000,
-          });
-          const limited = values.slice(0, maxDocs);
-          const elapsed = Date.now() - start;
-          writeAuditLog(toolName, conn.id, auth.apiKeyId, {
-            query: serializedQuery,
-            collection,
-            executionMs: elapsed,
-            docCount: limited.length,
-          });
-          recordQueryPattern(conn.id, serializedQuery);
-          rememberSuccess(toolName);
-          return {
-            content: [
-              { type: "text" as const, text: JSON.stringify(limited, null, 2) },
-            ],
-          };
-        }
-        default:
-          return toolError(toolName, `Unsupported operation: ${operation}`);
       }
 
       const cleaned = docs.map((document) => stripFields(document, hiddenFields));
@@ -1162,11 +1290,33 @@ function createMcpServer(auth: AuthContext): McpServer {
         const hiddenFields = getHiddenFieldNames(conn.id);
 
         try {
-          const mongoDb = await getMongoDb(conn.sandboxPort);
-          const coll = mongoDb.collection(collection);
-          const docs = (await coll
-            .aggregate([{ $sample: { size: sampleSize } }], { maxTimeMS: 10_000 })
-            .toArray()) as Record<string, unknown>[];
+          let docs: Record<string, unknown>[];
+          switch (conn.dbType) {
+            case "mongodb": {
+              const mongoDb = await getMongoDb(conn.sandboxPort);
+              const coll = mongoDb.collection(collection);
+              docs = (await coll
+                .aggregate([{ $sample: { size: sampleSize } }], { maxTimeMS: 10_000 })
+                .toArray()) as Record<string, unknown>[];
+              break;
+            }
+            case "postgresql": {
+              const pg = await getPgClient(conn.sandboxPort, conn.databaseName);
+              const qualified = resolvePgCollection(collection);
+              const res = await pg.query<Record<string, unknown>>(
+                `SELECT * FROM ${qualified} ORDER BY RANDOM() LIMIT ${sampleSize}`
+              );
+              docs = res.rows;
+              break;
+            }
+            default: {
+              const _exhaustive: never = conn.dbType;
+              return toolError(
+                "sample-documents",
+                `Unsupported database type: ${_exhaustive}`
+              );
+            }
+          }
 
           const cleaned = docs.map((document) => stripFields(document, hiddenFields));
           const elapsed = Date.now() - start;
@@ -1440,6 +1590,7 @@ export function createMcpRouter(): {
           typeof conn.description === "string" ? conn.description : null,
         databaseName: conn.databaseName,
         sandboxPort: conn.sandboxPort,
+        dbType: normalizeDbType(conn.dbType),
       });
     }
 
@@ -1589,6 +1740,14 @@ export function createMcpRouter(): {
         await client.close();
       } catch (e) {
         console.error(`[MCP] Error closing MongoDB client on port ${port}:`, e);
+      }
+    }
+    // Close PostgreSQL clients
+    for (const [key, client] of pgClients) {
+      try {
+        await client.end();
+      } catch (e) {
+        console.error(`[MCP] Error closing PostgreSQL client ${key}:`, e);
       }
     }
   }

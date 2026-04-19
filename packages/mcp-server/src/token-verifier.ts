@@ -21,6 +21,7 @@ export interface AccessibleConnection {
   description: string | null;
   databaseName: string;
   sandboxPort: number;
+  dbType: "mongodb" | "postgresql";
 }
 
 export interface AuthContext {
@@ -50,7 +51,19 @@ function loadAccessibleConnections(userId: string): AccessibleConnection[] {
       description: row.description ?? null,
       databaseName: row.databaseName,
       sandboxPort: row.sandboxPort!,
+      dbType: normalizeDbType(row.dbType),
     }));
+}
+
+export function normalizeDbType(value: unknown): "mongodb" | "postgresql" {
+  switch (value) {
+    case "postgresql":
+      return "postgresql";
+    case "mongodb":
+      return "mongodb";
+    default:
+      return "mongodb";
+  }
 }
 
 function authenticateApiKeyToken(token: string): AuthContext | null {
