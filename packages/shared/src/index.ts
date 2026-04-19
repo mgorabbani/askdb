@@ -30,7 +30,10 @@ export type {
 } from "./auth/oauth.js";
 export type { DatabaseAdapter, IntrospectionResult, QueryResult } from "./adapters/types.js";
 export { MongoDBAdapter } from "./adapters/mongodb/index.js";
-export { syncConnection } from "./adapters/mongodb/sync.js";
+export { PostgreSQLAdapter } from "./adapters/postgresql/index.js";
+export { getAdapter, normalizeDbType, SUPPORTED_DB_TYPES } from "./adapters/factory.js";
+export type { SupportedDbType } from "./adapters/factory.js";
+export { syncConnection } from "./adapters/sync.js";
 export { startSyncScheduler, stopSyncScheduler } from "./adapters/mongodb/scheduler.js";
 export { introspectAndSave } from "./adapters/mongodb/introspect.js";
 export { detectRelationships } from "./adapters/mongodb/relationships.js";

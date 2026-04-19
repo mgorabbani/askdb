@@ -1,6 +1,6 @@
 import { db } from "../../db/index.js";
 import { connections } from "../../db/schema.js";
-import { syncConnection } from "./sync.js";
+import { syncConnection } from "../sync.js";
 
 const SYNC_HOUR_LOCAL = 5;
 const DAILY_MS = 24 * 60 * 60 * 1000;

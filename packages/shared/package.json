@@ -12,6 +12,11 @@
     "./adapters/mongodb": "./src/adapters/mongodb/index.ts",
     "./adapters/mongodb/sync": "./src/adapters/mongodb/sync.ts",
     "./adapters/mongodb/introspect": "./src/adapters/mongodb/introspect.ts",
+    "./adapters/postgresql": "./src/adapters/postgresql/index.ts",
+    "./adapters/postgresql/sync": "./src/adapters/postgresql/sync.ts",
+    "./adapters/postgresql/introspect": "./src/adapters/postgresql/introspect.ts",
+    "./adapters/factory": "./src/adapters/factory.ts",
+    "./adapters/sync": "./src/adapters/sync.ts",
     "./crypto/encryption": "./src/crypto/encryption.ts",
     "./auth/api-keys": "./src/auth/api-keys.ts",
     "./docker/manager": "./src/docker/manager.ts",
@@ -33,12 +38,14 @@
     "better-sqlite3": "^12.9.0",
     "dockerode": "^4.0.10",
     "drizzle-orm": "^0.45.2",
-    "mongodb": "^7.1.1"
+    "mongodb": "^7.1.1",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/dockerode": "^4.0.1",
     "@types/node": "^25.6.0",
+    "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"

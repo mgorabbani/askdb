@@ -1,9 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Database } from "lucide-react";
+
+type DbType = "mongodb" | "postgresql";
 
 interface ParsedConnection {
   host: string;
@@ -14,94 +16,146 @@ interface ParsedConnection {
   options: string;
 }
 
-function parseMongoUri(uri: string): ParsedConnection {
-  const result: ParsedConnection = {
-    host: "",
-    port: "27017",
-    username: "",
-    password: "",
-    database: "",
-    options: "",
-  };
-
-  try {
-    const match = uri.match(
-      /^mongodb(?:\+srv)?:\/\/(?:([^:]+):([^@]+)@)?([^/?]+)(?:\/([^?]*))?(?:\?(.*))?$/
-    );
-    if (!match) return result;
-
-    const [, user, pass, hostPort, db, opts] = match;
-    if (user) result.username = decodeURIComponent(user);
-    if (pass) result.password = decodeURIComponent(pass);
-    if (db) result.database = db;
-    if (opts) result.options = opts;
-
-    if (hostPort) {
-      const hostParts = hostPort.split(":");
-      result.host = hostParts[0] ?? "";
-      if (hostParts[1]) result.port = hostParts[1];
-    }
-  } catch {
-    // noop
-  }
-
-  return result;
+interface DbProfile {
+  label: string;
+  defaultPort: string;
+  scheme: string;
+  placeholder: string;
+  parse: (uri: string) => ParsedConnection;
+  build: (parsed: ParsedConnection) => string;
 }
 
-function buildMongoUri(parsed: ParsedConnection): string {
-  let uri = "mongodb://";
-  if (parsed.username && parsed.password) {
-    uri += `${encodeURIComponent(parsed.username)}:${encodeURIComponent(parsed.password)}@`;
-  }
-  uri += parsed.host;
-  if (parsed.port && parsed.port !== "27017") {
-    uri += `:${parsed.port}`;
-  }
-  uri += "/";
-  if (parsed.database) {
-    uri += parsed.database;
-  }
+const EMPTY: ParsedConnection = {
+  host: "",
+  port: "",
+  username: "",
+  password: "",
+  database: "",
+  options: "",
+};
 
-  let opts = parsed.options || "";
-  if (parsed.username && !opts.includes("authSource")) {
-    opts = opts ? `${opts}&authSource=admin` : "authSource=admin";
-  }
-  if (opts) {
-    uri += `?${opts}`;
-  }
-  return uri;
-}
+const PROFILES: Record<DbType, DbProfile> = {
+  mongodb: {
+    label: "MongoDB",
+    defaultPort: "27017",
+    scheme: "mongodb",
+    placeholder: "mongodb://user:pass@host:port/dbname",
+    parse(uri) {
+      const result: ParsedConnection = { ...EMPTY, port: "27017" };
+      const match = uri.match(
+        /^mongodb(?:\+srv)?:\/\/(?:([^:]+):([^@]+)@)?([^/?]+)(?:\/([^?]*))?(?:\?(.*))?$/,
+      );
+      if (!match) return result;
+      const [, user, pass, hostPort, db, opts] = match;
+      if (user) result.username = decodeURIComponent(user);
+      if (pass) result.password = decodeURIComponent(pass);
+      if (db) result.database = db;
+      if (opts) result.options = opts;
+      if (hostPort) {
+        const parts = hostPort.split(":");
+        result.host = parts[0] ?? "";
+        if (parts[1]) result.port = parts[1];
+      }
+      return result;
+    },
+    build(parsed) {
+      let uri = "mongodb://";
+      if (parsed.username && parsed.password) {
+        uri += `${encodeURIComponent(parsed.username)}:${encodeURIComponent(parsed.password)}@`;
+      }
+      uri += parsed.host;
+      if (parsed.port && parsed.port !== "27017") uri += `:${parsed.port}`;
+      uri += "/";
+      if (parsed.database) uri += parsed.database;
+
+      let opts = parsed.options || "";
+      if (parsed.username && !opts.includes("authSource")) {
+        opts = opts ? `${opts}&authSource=admin` : "authSource=admin";
+      }
+      if (opts) uri += `?${opts}`;
+      return uri;
+    },
+  },
+  postgresql: {
+    label: "PostgreSQL",
+    defaultPort: "5432",
+    scheme: "postgresql",
+    placeholder: "postgresql://user:pass@host:5432/dbname",
+    parse(uri) {
+      const result: ParsedConnection = { ...EMPTY, port: "5432" };
+      const match = uri.match(
+        /^postgres(?:ql)?:\/\/(?:([^:]+):([^@]+)@)?([^/?]+)(?:\/([^?]*))?(?:\?(.*))?$/,
+      );
+      if (!match) return result;
+      const [, user, pass, hostPort, db, opts] = match;
+      if (user) result.username = decodeURIComponent(user);
+      if (pass) result.password = decodeURIComponent(pass);
+      if (db) result.database = db;
+      if (opts) result.options = opts;
+      if (hostPort) {
+        const parts = hostPort.split(":");
+        result.host = parts[0] ?? "";
+        if (parts[1]) result.port = parts[1];
+      }
+      return result;
+    },
+    build(parsed) {
+      let uri = "postgresql://";
+      if (parsed.username) {
+        uri += encodeURIComponent(parsed.username);
+        if (parsed.password) uri += `:${encodeURIComponent(parsed.password)}`;
+        uri += "@";
+      }
+      uri += parsed.host || "";
+      if (parsed.port && parsed.port !== "5432") uri += `:${parsed.port}`;
+      else if (parsed.port) uri += `:${parsed.port}`;
+      uri += "/";
+      if (parsed.database) uri += parsed.database;
+      if (parsed.options) uri += `?${parsed.options}`;
+      return uri;
+    },
+  },
+};
 
 export default function ConnectPage() {
   const navigate = useNavigate();
+  const [dbType, setDbType] = useState<DbType>("mongodb");
   const [name, setName] = useState("");
   const [rawUri, setRawUri] = useState("");
-  const [parsed, setParsed] = useState<ParsedConnection>({
-    host: "",
-    port: "27017",
-    username: "",
-    password: "",
-    database: "",
-    options: "",
-  });
+  const [parsed, setParsed] = useState<ParsedConnection>({ ...EMPTY, port: "27017" });
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleUriChange = useCallback((value: string) => {
-    setRawUri(value);
-    if (value.startsWith("mongodb")) {
-      setParsed(parseMongoUri(value));
-    }
+  const profile = useMemo(() => PROFILES[dbType], [dbType]);
+
+  const handleDbTypeChange = useCallback((next: DbType) => {
+    setDbType(next);
+    setRawUri("");
+    setParsed({ ...EMPTY, port: PROFILES[next].defaultPort });
+    setError("");
   }, []);
 
-  const updateField = useCallback((field: keyof ParsedConnection, value: string) => {
-    setParsed((prev) => {
-      const next = { ...prev, [field]: value };
-      setRawUri(buildMongoUri(next));
-      return next;
-    });
-  }, []);
+  const handleUriChange = useCallback(
+    (value: string) => {
+      setRawUri(value);
+      if (value.startsWith(profile.scheme)) {
+        setParsed(profile.parse(value));
+      }
+    },
+    [profile],
+  );
+
+  const updateField = useCallback(
+    (field: keyof ParsedConnection, value: string) => {
+      setParsed((prev) => {
+        const next = { ...prev, [field]: value };
+        setRawUri(profile.build(next));
+        return next;
+      });
+    },
+    [profile],
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -115,12 +169,17 @@ export default function ConnectPage() {
 
     setLoading(true);
 
-    const connectionString = buildMongoUri(parsed);
+    const connectionString = profile.build(parsed);
 
     const res = await fetch("/api/connections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, connectionString, databaseName: parsed.database }),
+      body: JSON.stringify({
+        name,
+        dbType,
+        connectionString,
+        databaseName: parsed.database,
+      }),
     });
 
     const data = await res.json();
@@ -145,13 +204,36 @@ export default function ConnectPage() {
           <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
             <Database className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-center text-xl">Connect MongoDB</CardTitle>
+          <CardTitle className="text-center text-xl">Connect {profile.label}</CardTitle>
           <CardDescription className="text-center">
             Paste a connection string to auto-fill, or enter details manually.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Database Type</label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {(Object.keys(PROFILES) as DbType[]).map((key) => {
+                  const selected = dbType === key;
+                  return (
+                    <button
+                      type="button"
+                      key={key}
+                      onClick={() => handleDbTypeChange(key)}
+                      className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                        selected
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-input bg-background text-muted-foreground hover:bg-accent"
+                      }`}
+                    >
+                      {PROFILES[key].label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div>
               <label htmlFor="name" className="text-sm font-medium">Connection Name</label>
               <Input
@@ -169,7 +251,7 @@ export default function ConnectPage() {
               <Input
                 id="connString"
                 type="password"
-                placeholder="mongodb://user:pass@host:port/dbname"
+                placeholder={profile.placeholder}
                 value={rawUri}
                 onChange={(e) => handleUriChange(e.target.value)}
               />
@@ -185,14 +267,14 @@ export default function ConnectPage() {
               </div>
               <div>
                 <label htmlFor="port" className="text-sm font-medium">Port</label>
-                <Input id="port" placeholder="27017" value={parsed.port} onChange={(e) => updateField("port", e.target.value)} />
+                <Input id="port" placeholder={profile.defaultPort} value={parsed.port} onChange={(e) => updateField("port", e.target.value)} />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="username" className="text-sm font-medium">Username</label>
-                <Input id="username" placeholder="root" value={parsed.username} onChange={(e) => updateField("username", e.target.value)} />
+                <Input id="username" placeholder={dbType === "postgresql" ? "postgres" : "root"} value={parsed.username} onChange={(e) => updateField("username", e.target.value)} />
               </div>
               <div>
                 <label htmlFor="password" className="text-sm font-medium">Password</label>
@@ -204,7 +286,7 @@ export default function ConnectPage() {
               <label htmlFor="database" className="text-sm font-medium">
                 Database Name <span className="text-destructive">*</span>
               </label>
-              <Input id="database" placeholder="myapp" value={parsed.database} onChange={(e) => updateField("database", e.target.value)} required />
+              <Input id="database" placeholder={dbType === "postgresql" ? "postgres" : "myapp"} value={parsed.database} onChange={(e) => updateField("database", e.target.value)} required />
               <p className="mt-1 text-xs text-muted-foreground">
                 The database to sync into the sandbox.
               </p>

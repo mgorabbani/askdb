@@ -6,7 +6,9 @@ import {
   db,
   schema,
   encrypt,
-  MongoDBAdapter,
+  getAdapter,
+  normalizeDbType,
+  SUPPORTED_DB_TYPES,
   sandboxManager,
   syncConnection,
   generateSchemaMarkdown,
@@ -24,7 +26,6 @@ const {
 export const connectionsRouter: ExpressRouter = Router();
 connectionsRouter.use(requireSession);
 
-const adapter = new MongoDBAdapter();
 const MAX_DB_SIZE = 20 * 1024 * 1024 * 1024;
 const WARN_DB_SIZE = 5 * 1024 * 1024 * 1024;
 
@@ -62,10 +63,11 @@ connectionsRouter.get("/", async (req, res) => {
 
 connectionsRouter.post("/", async (req, res) => {
   const r = req as AuthedRequest;
-  const { name, connectionString, databaseName } = req.body as {
+  const { name, connectionString, databaseName, dbType } = req.body as {
     name?: string;
     connectionString?: string;
     databaseName?: string;
+    dbType?: string;
   };
 
   if (!name || !connectionString) {
@@ -77,13 +79,29 @@ connectionsRouter.post("/", async (req, res) => {
     return;
   }
 
-  const validation = await adapter.validateConnection(connectionString, databaseName);
+  let normalizedDbType: string;
+  try {
+    normalizedDbType = normalizeDbType(dbType ?? "mongodb");
+  } catch {
+    res.status(400).json({
+      error: `Unsupported database type. Supported: ${SUPPORTED_DB_TYPES.join(", ")}`,
+    });
+    return;
+  }
+
+  const adapter = getAdapter(normalizedDbType);
+
+  const validation = await (adapter as unknown as {
+    validateConnection(connString: string, databaseName?: string): Promise<{ valid: boolean; error?: string }>;
+  }).validateConnection(connectionString, databaseName);
   if (!validation.valid) {
     res.status(400).json({ error: `Connection failed: ${validation.error}` });
     return;
   }
 
-  const size = await adapter.getDatabaseSize(connectionString, databaseName);
+  const size = await (adapter as unknown as {
+    getDatabaseSize(connString: string, databaseName?: string): Promise<{ sizeBytes: number; collections: number }>;
+  }).getDatabaseSize(connectionString, databaseName);
   if (size.sizeBytes > MAX_DB_SIZE) {
     res.status(400).json({
       error: `Database too large (${formatBytes(size.sizeBytes)}). Maximum is 20GB.`,
@@ -100,7 +118,7 @@ connectionsRouter.post("/", async (req, res) => {
     .insert(connections)
     .values({
       name,
-      dbType: "mongodb",
+      dbType: normalizedDbType,
       databaseName,
       connectionString: encrypt(connectionString),
       userId: r.session.user.id,
@@ -171,7 +189,7 @@ connectionsRouter.get("/:id/status", async (req, res) => {
     return;
   }
 
-  const sandbox = await sandboxManager.getStatus(req.params.id);
+  const sandbox = await sandboxManager.getStatus(req.params.id, conn.dbType);
   res.json({
     syncStatus: conn.syncStatus,
     syncError: conn.syncError,
