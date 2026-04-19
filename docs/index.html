@@ -1,0 +1,1696 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AskDB — Give AI agents safe access to your database</title>
+    <meta
+      name="description"
+      content="Self-hosted MCP bridge for MongoDB and PostgreSQL. Sandbox your databases, control which fields the AI can see, and plug one /mcp endpoint into Claude, ChatGPT, and Cursor."
+    />
+
+    <meta property="og:title" content="AskDB — Give AI agents safe access to your database" />
+    <meta
+      property="og:description"
+      content="Your MongoDB or Postgres, sandboxed. Your fields, controlled. One MCP endpoint for every AI tool."
+    />
+    <meta property="og:image" content="assets/cover-github.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://askdb.com" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AskDB — Give AI agents safe access to your database" />
+    <meta name="twitter:description" content="Self-hosted MCP bridge for MongoDB and PostgreSQL." />
+    <meta name="twitter:image" content="assets/cover-github.png" />
+
+    <link rel="icon" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --bg-elev: #12121a;
+        --bg-elev-2: #1a1a24;
+        --border: #23232e;
+        --border-strong: #2e2e3c;
+        --text: #f4f4f8;
+        --text-dim: #9898a6;
+        --text-faint: #54545f;
+        --accent: #8a2be2;
+        --accent-dim: #6d22b0;
+        --accent-glow: rgba(138, 43, 226, 0.28);
+        --good: #3ee396;
+        --bad: #ff5470;
+        --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        --sans: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        font-weight: 400;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        letter-spacing: -0.01em;
+        line-height: 1.55;
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(ellipse 80% 50% at 50% -10%, var(--accent-glow), transparent 60%),
+          radial-gradient(ellipse 60% 40% at 85% 10%, rgba(138, 43, 226, 0.08), transparent 70%);
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 64px 64px;
+        mask-image: radial-gradient(ellipse 80% 60% at 50% 20%, #000 40%, transparent 90%);
+        -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 20%, #000 40%, transparent 90%);
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      #cursor-glow {
+        position: fixed;
+        width: 520px;
+        height: 520px;
+        border-radius: 50%;
+        background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 1;
+        opacity: 0;
+        transition: opacity 0.4s ease;
+      }
+
+      main,
+      nav,
+      footer {
+        position: relative;
+        z-index: 2;
+      }
+
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      /* ===== NAV ===== */
+      nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 24px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+        font-size: 17px;
+        letter-spacing: -0.02em;
+      }
+
+      .brand img {
+        height: 28px;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 28px;
+        align-items: center;
+      }
+
+      .nav-links a {
+        color: var(--text-dim);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 500;
+        transition: color 0.2s;
+      }
+
+      .nav-links a:hover {
+        color: var(--text);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        text-decoration: none;
+        letter-spacing: -0.01em;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+        font-family: var(--sans);
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 0 0 1px var(--accent-dim), 0 8px 24px -8px var(--accent-glow);
+      }
+
+      .btn-primary:hover {
+        background: var(--accent-dim);
+        transform: translateY(-1px);
+      }
+
+      .btn-ghost {
+        background: transparent;
+        border: 1px solid var(--border-strong);
+        color: var(--text);
+      }
+
+      .btn-ghost:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .btn-lg {
+        padding: 14px 24px;
+        font-size: 15px;
+      }
+
+      /* ===== HERO ===== */
+      .hero {
+        padding: 80px 0 60px;
+        text-align: center;
+      }
+
+      .eyebrow {
+        display: inline-block;
+        padding: 6px 14px;
+        border: 1px solid var(--border-strong);
+        border-radius: 999px;
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-dim);
+        margin-bottom: 28px;
+        background: rgba(138, 43, 226, 0.04);
+      }
+
+      .eyebrow span {
+        color: var(--accent);
+      }
+
+      h1 {
+        font-size: clamp(40px, 7vw, 76px);
+        font-weight: 800;
+        letter-spacing: -0.045em;
+        line-height: 1.02;
+        margin: 0 0 24px;
+      }
+
+      h1 .accent {
+        background: linear-gradient(135deg, var(--accent) 0%, #b366ff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .hero p {
+        font-size: clamp(16px, 1.6vw, 19px);
+        color: var(--text-dim);
+        max-width: 680px;
+        margin: 0 auto 40px;
+        line-height: 1.6;
+      }
+
+      .hero-ctas {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 28px;
+      }
+
+      .trust-row {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-faint);
+        letter-spacing: 0.02em;
+      }
+
+      .trust-row b {
+        color: var(--text-dim);
+        font-weight: 500;
+      }
+
+      /* ===== VIDEO ===== */
+      .video-box {
+        max-width: 1100px;
+        margin: 48px auto 0;
+        aspect-ratio: 16 / 9;
+        border: 1px solid var(--border-strong);
+        border-radius: 18px;
+        background: var(--bg-elev);
+        box-shadow: 0 40px 80px -30px rgba(138, 43, 226, 0.25);
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .video-box::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(180deg, transparent 60%, rgba(138, 43, 226, 0.08) 100%),
+          radial-gradient(circle at 50% 50%, rgba(138, 43, 226, 0.1), transparent 70%);
+      }
+
+      .video-placeholder-icon {
+        width: 68px;
+        height: 68px;
+        border-radius: 50%;
+        background: var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        box-shadow: 0 0 0 6px rgba(138, 43, 226, 0.2);
+      }
+
+      .video-placeholder-icon::before {
+        content: "";
+        width: 0;
+        height: 0;
+        border-left: 18px solid #fff;
+        border-top: 11px solid transparent;
+        border-bottom: 11px solid transparent;
+        margin-left: 4px;
+      }
+
+      .video-box p {
+        position: relative;
+        color: var(--text-dim);
+        font-size: 14px;
+        font-family: var(--mono);
+      }
+
+      /* ===== SECTIONS ===== */
+      section {
+        padding: 80px 0;
+        position: relative;
+      }
+
+      .section-head {
+        text-align: center;
+        margin-bottom: 56px;
+      }
+
+      .section-head h2 {
+        font-size: clamp(28px, 4vw, 42px);
+        font-weight: 700;
+        letter-spacing: -0.035em;
+        margin: 0 0 14px;
+        line-height: 1.1;
+      }
+
+      .section-head p {
+        color: var(--text-dim);
+        max-width: 620px;
+        margin: 0 auto;
+        font-size: 16px;
+      }
+
+      /* ===== RIGHT-FOR-YOU ===== */
+      .checklist {
+        max-width: 780px;
+        margin: 0 auto;
+        display: grid;
+        gap: 14px;
+      }
+
+      .checklist li {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        padding: 14px 18px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-elev);
+        list-style: none;
+      }
+
+      .checklist li::before {
+        content: "✓";
+        color: var(--accent);
+        font-weight: 700;
+        font-family: var(--mono);
+        flex-shrink: 0;
+      }
+
+      ul.checklist {
+        padding: 0;
+      }
+
+      /* ===== FEATURES GRID ===== */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 18px;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--bg-elev);
+        padding: 24px;
+        transition: all 0.25s;
+      }
+
+      .card:hover {
+        border-color: var(--border-strong);
+        transform: translateY(-2px);
+      }
+
+      .card h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0 0 10px;
+        letter-spacing: -0.015em;
+      }
+
+      .card p {
+        color: var(--text-dim);
+        font-size: 14px;
+        margin: 0;
+        line-height: 1.6;
+      }
+
+      .card code {
+        font-family: var(--mono);
+        font-size: 12px;
+        background: var(--bg-elev-2);
+        padding: 1px 6px;
+        border-radius: 4px;
+        color: var(--accent);
+        border: 1px solid var(--border);
+      }
+
+      /* ===== CODE MODE ===== */
+      .code-mode {
+        border: 1px solid var(--border-strong);
+        border-radius: 18px;
+        background: linear-gradient(180deg, var(--bg-elev) 0%, var(--bg) 100%);
+        padding: 40px;
+        overflow: hidden;
+      }
+
+      .code-mode h2 {
+        font-size: clamp(24px, 3vw, 34px);
+        margin: 0 0 10px;
+        letter-spacing: -0.03em;
+      }
+
+      .code-mode > p {
+        color: var(--text-dim);
+        margin: 0 0 28px;
+      }
+
+      .code-mode-bullets {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin: 24px 0 32px;
+      }
+
+      .code-mode-bullets li {
+        list-style: none;
+        padding: 14px 16px;
+        background: var(--bg-elev-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-size: 13px;
+        color: var(--text-dim);
+      }
+
+      .code-mode-bullets li b {
+        color: var(--text);
+        display: block;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      ul.code-mode-bullets {
+        padding: 0;
+      }
+
+      .simulator {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 24px;
+      }
+
+      @media (max-width: 760px) {
+        .simulator {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .sim-pane {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg);
+        overflow: hidden;
+      }
+
+      .sim-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 14px;
+        background: var(--bg-elev-2);
+        border-bottom: 1px solid var(--border);
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-dim);
+      }
+
+      .sim-dots {
+        display: flex;
+        gap: 6px;
+      }
+
+      .sim-dots span {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--border-strong);
+      }
+
+      .sim-body {
+        padding: 16px;
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.65;
+        color: var(--text);
+        min-height: 210px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      textarea.sim-body {
+        resize: vertical;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: var(--text);
+        width: 100%;
+        font-family: var(--mono);
+      }
+
+      .sim-run {
+        border-top: 1px solid var(--border);
+        padding: 12px 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--bg-elev);
+      }
+
+      .sim-run small {
+        color: var(--text-faint);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .fine-print {
+        margin-top: 20px;
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-faint);
+      }
+
+      /* ===== FIELD VISIBILITY DEMO ===== */
+      .visibility-demo {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }
+
+      @media (max-width: 760px) {
+        .visibility-demo {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .fields-panel {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--bg-elev);
+        padding: 20px;
+      }
+
+      .fields-panel h4 {
+        margin: 0 0 14px;
+        font-size: 14px;
+        color: var(--text-dim);
+        font-family: var(--mono);
+        font-weight: 500;
+      }
+
+      .field-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: 7px 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        color: var(--text-dim);
+        cursor: pointer;
+        transition: all 0.15s;
+        background: var(--bg-elev-2);
+        user-select: none;
+      }
+
+      .chip:hover {
+        border-color: var(--accent);
+      }
+
+      .chip.on {
+        background: rgba(138, 43, 226, 0.15);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .chip.off {
+        background: rgba(255, 84, 112, 0.1);
+        border-color: rgba(255, 84, 112, 0.4);
+        color: var(--bad);
+        text-decoration: line-through;
+      }
+
+      .json-panel {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--bg);
+        overflow: hidden;
+      }
+
+      .json-panel pre {
+        margin: 0;
+        padding: 20px;
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.75;
+        color: var(--text);
+        overflow-x: auto;
+      }
+
+      .json-panel .hidden-row {
+        opacity: 0.25;
+        text-decoration: line-through;
+      }
+
+      .json-key {
+        color: var(--accent);
+      }
+
+      .json-str {
+        color: var(--good);
+      }
+
+      .json-num {
+        color: #ffd166;
+      }
+
+      /* ===== COMPARE ===== */
+      .compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      @media (max-width: 760px) {
+        .compare {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .compare-col {
+        padding: 24px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+      }
+
+      .compare-col.bad {
+        background: rgba(255, 84, 112, 0.04);
+        border-color: rgba(255, 84, 112, 0.2);
+      }
+
+      .compare-col.good {
+        background: rgba(62, 227, 150, 0.04);
+        border-color: rgba(62, 227, 150, 0.2);
+      }
+
+      .compare-col h3 {
+        margin: 0 0 16px;
+        font-size: 14px;
+        font-family: var(--mono);
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .compare-col.bad h3 {
+        color: var(--bad);
+      }
+
+      .compare-col.good h3 {
+        color: var(--good);
+      }
+
+      .compare-col ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 12px;
+      }
+
+      .compare-col li {
+        font-size: 14px;
+        color: var(--text-dim);
+        line-height: 1.55;
+        padding-left: 22px;
+        position: relative;
+      }
+
+      .compare-col li::before {
+        position: absolute;
+        left: 0;
+        top: 1px;
+        font-family: var(--mono);
+        font-weight: 600;
+      }
+
+      .compare-col.bad li::before {
+        content: "✗";
+        color: var(--bad);
+      }
+
+      .compare-col.good li::before {
+        content: "✓";
+        color: var(--good);
+      }
+
+      /* ===== INSTALL ===== */
+      .install {
+        background: linear-gradient(180deg, var(--bg-elev) 0%, var(--bg) 100%);
+        border: 1px solid var(--border-strong);
+        border-radius: 18px;
+        padding: 40px;
+        text-align: center;
+      }
+
+      .terminal {
+        max-width: 720px;
+        margin: 0 auto;
+        background: #05050a;
+        border: 1px solid var(--border-strong);
+        border-radius: 12px;
+        overflow: hidden;
+        text-align: left;
+      }
+
+      .terminal-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 14px;
+        background: var(--bg-elev-2);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .terminal-body {
+        padding: 18px 20px;
+        font-family: var(--mono);
+        font-size: 14px;
+        color: var(--text);
+        overflow-x: auto;
+      }
+
+      .terminal-body .prompt {
+        color: var(--accent);
+        user-select: none;
+      }
+
+      .copy-btn {
+        background: transparent;
+        border: 1px solid var(--border-strong);
+        color: var(--text-dim);
+        padding: 5px 12px;
+        border-radius: 6px;
+        font-family: var(--mono);
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .copy-btn:hover {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .copy-btn.copied {
+        color: var(--good);
+        border-color: var(--good);
+      }
+
+      .install-modes {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 12px;
+        margin-top: 28px;
+      }
+
+      .mode {
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg-elev);
+        font-size: 13px;
+        text-align: left;
+      }
+
+      .mode b {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 14px;
+      }
+
+      .mode p {
+        color: var(--text-dim);
+        margin: 0;
+        font-size: 13px;
+      }
+
+      /* ===== CONNECT TABS ===== */
+      .tabs {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 16px;
+      }
+
+      .tab {
+        padding: 10px 18px;
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--text-dim);
+        cursor: pointer;
+        border: none;
+        background: transparent;
+        border-bottom: 2px solid transparent;
+        transition: all 0.15s;
+      }
+
+      .tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+
+      .tab-panel {
+        display: none;
+      }
+
+      .tab-panel.active {
+        display: block;
+      }
+
+      /* ===== SECURITY GRID ===== */
+      .security-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 12px;
+      }
+
+      .sec {
+        display: flex;
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg-elev);
+        font-size: 13px;
+        color: var(--text-dim);
+        line-height: 1.55;
+      }
+
+      .sec::before {
+        content: "🛡";
+        color: var(--accent);
+        flex-shrink: 0;
+      }
+
+      .callout {
+        margin-top: 18px;
+        padding: 14px 18px;
+        border-left: 2px solid var(--accent);
+        background: rgba(138, 43, 226, 0.05);
+        font-size: 14px;
+        color: var(--text-dim);
+      }
+
+      /* ===== FAQ ===== */
+      .faq {
+        max-width: 820px;
+        margin: 0 auto;
+      }
+
+      .faq details {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 10px;
+        background: var(--bg-elev);
+        transition: all 0.2s;
+      }
+
+      .faq details[open] {
+        border-color: var(--accent);
+      }
+
+      .faq summary {
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 15px;
+        list-style: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .faq summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .faq summary::after {
+        content: "+";
+        color: var(--accent);
+        font-family: var(--mono);
+        font-size: 20px;
+        font-weight: 400;
+      }
+
+      .faq details[open] summary::after {
+        content: "−";
+      }
+
+      .faq details p {
+        color: var(--text-dim);
+        margin: 12px 0 0;
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      /* ===== CTA + FOOTER ===== */
+      .final-cta {
+        text-align: center;
+        padding: 80px 0 100px;
+      }
+
+      .final-cta p {
+        color: var(--text-dim);
+        font-size: 15px;
+        margin: 0 0 24px;
+      }
+
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 48px 0 32px;
+        font-size: 13px;
+      }
+
+      .footer-grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr 1fr;
+        gap: 40px;
+        margin-bottom: 32px;
+      }
+
+      @media (max-width: 760px) {
+        .footer-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .footer-grid h5 {
+        font-size: 12px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin: 0 0 12px;
+      }
+
+      .footer-grid a {
+        display: block;
+        color: var(--text-dim);
+        text-decoration: none;
+        margin-bottom: 8px;
+        transition: color 0.15s;
+      }
+
+      .footer-grid a:hover {
+        color: var(--text);
+      }
+
+      .footer-brand p {
+        color: var(--text-faint);
+        margin: 10px 0 0;
+        max-width: 320px;
+        line-height: 1.5;
+      }
+
+      .footer-bottom {
+        text-align: center;
+        color: var(--text-faint);
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+      }
+
+      /* ===== REVEAL ===== */
+      .reveal {
+        opacity: 0;
+        transform: translateY(20px);
+        transition: opacity 0.7s ease, transform 0.7s ease;
+      }
+
+      .reveal.in {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      /* ===== HOW-IT-WORKS ===== */
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+      }
+
+      .step {
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--bg-elev);
+      }
+
+      .step-num {
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--accent);
+        margin-bottom: 10px;
+      }
+
+      .step b {
+        display: block;
+        font-size: 17px;
+        margin-bottom: 8px;
+        letter-spacing: -0.01em;
+      }
+
+      .step p {
+        color: var(--text-dim);
+        font-size: 14px;
+        margin: 0;
+      }
+
+      .arch {
+        margin: 40px auto 0;
+        max-width: 720px;
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--bg-elev);
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-dim);
+        overflow-x: auto;
+        white-space: pre;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="cursor-glow"></div>
+
+    <nav>
+      <a href="#" class="brand">
+        <img src="assets/logo.png" alt="AskDB" />AskDB
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="https://github.com/mgorabbani/askdb" target="_blank" rel="noopener">GitHub</a>
+        <a href="#install" class="btn btn-primary">Install</a>
+      </div>
+    </nav>
+
+    <main>
+      <!-- HERO -->
+      <section class="hero wrap">
+        <div class="eyebrow">
+          <span>new</span> &nbsp; PostgreSQL adapter is live &middot; MongoDB + Postgres in one MCP
+        </div>
+        <h1>
+          Give AI agents safe access<br />
+          to <span class="accent">your database.</span>
+        </h1>
+        <p>
+          Your MongoDB or Postgres, sandboxed. Your fields, controlled.
+          One <code style="font-family: var(--mono); color: var(--accent)">/mcp</code> endpoint for Claude, ChatGPT, Cursor, and anything else that speaks MCP.
+        </p>
+        <div class="hero-ctas">
+          <a href="#install" class="btn btn-primary btn-lg">Install on your VPS →</a>
+          <a href="https://github.com/mgorabbani/askdb" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">Star on GitHub</a>
+        </div>
+        <div class="trust-row"><b>Works with</b> &nbsp;·&nbsp; Claude Desktop &nbsp;·&nbsp; Claude Code &nbsp;·&nbsp; ChatGPT &nbsp;·&nbsp; Cursor &nbsp;·&nbsp; any MCP client</div>
+      </section>
+
+      <!-- DEMO VIDEO PLACEHOLDER -->
+      <section style="padding-top: 0">
+        <div class="wrap">
+          <div class="video-box reveal">
+            <div class="video-placeholder-icon"></div>
+            <p>demo.mp4 — drop file in /assets, wire up &lt;video&gt; tag</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT FOR YOU -->
+      <section class="wrap">
+        <div class="section-head reveal">
+          <h2>AskDB is right for you if</h2>
+          <p>Seven checkboxes. If four or more sound like you, keep reading.</p>
+        </div>
+        <ul class="checklist reveal">
+          <li>You need business answers from your database without writing queries.</li>
+          <li>You want AI agents to query real data, not stale CSV exports.</li>
+          <li>You refuse to share raw database credentials with AI tools.</li>
+          <li>You need field-level control over what AI can see (GDPR, PII, compliance).</li>
+          <li>You want one MCP endpoint that works across Claude, ChatGPT, and Cursor.</li>
+          <li>You want audit logs for every AI query against your data.</li>
+          <li>You want to self-host everything — your server, your data, your rules.</li>
+        </ul>
+      </section>
+
+      <!-- FEATURES -->
+      <section class="wrap" id="features">
+        <div class="section-head reveal">
+          <h2>Eleven things AskDB does out of the box</h2>
+          <p>Every card below is already in the shipping build. No roadmap items, no "coming soon".</p>
+        </div>
+        <div class="grid reveal">
+          <div class="card">
+            <h3>Sandbox Isolation</h3>
+            <p>Production data cloned into a Docker container. AI reads the copy, never the original.</p>
+          </div>
+          <div class="card">
+            <h3>Field-Level Control</h3>
+            <p>Toggle any field or collection visible/hidden. Changes take effect immediately.</p>
+          </div>
+          <div class="card">
+            <h3>PII Auto-Detection</h3>
+            <p>Fields like <code>email</code>, <code>password</code>, <code>ssn</code>, <code>phone</code> are detected and pre-hidden automatically.</p>
+          </div>
+          <div class="card">
+            <h3>One Tool Surface, Two Engines</h3>
+            <p>MongoDB and PostgreSQL speak the same MCP vocabulary: <code>list-databases</code>, <code>list-collections</code>, <code>collection-schema</code>, <code>find</code>, <code>aggregate</code>, <code>count</code>, <code>distinct</code>, <code>sample-documents</code>, <code>execute-typescript</code>, <code>save-insight</code>.</p>
+          </div>
+          <div class="card">
+            <h3>Query Validation</h3>
+            <p>Allowlist-only. Write operations rejected. Dangerous pipeline stages (<code>$merge</code>, <code>$out</code> on Mongo; non-<code>SELECT</code> on Postgres) blocked.</p>
+          </div>
+          <div class="card">
+            <h3>Audit Trail</h3>
+            <p>Every MCP query logged with timestamp, execution time, collection/table, and row count.</p>
+          </div>
+          <div class="card">
+            <h3>API Key Auth</h3>
+            <p>Bearer token authentication. Keys shown once, stored hashed (SHA-256). Revoke anytime.</p>
+          </div>
+          <div class="card">
+            <h3>Agent Memory</h3>
+            <p>Common query patterns tracked automatically. Agents learn your database over time.</p>
+          </div>
+          <div class="card">
+            <h3>Schema Cache</h3>
+            <p>Field types, relationships, descriptions — cached so agents don't probe on every call.</p>
+          </div>
+          <div class="card">
+            <h3>Multi-Database Discovery</h3>
+            <p>Many databases, across engines. Plain-language descriptions plus a <code>databases://overview</code> resource and per-tool <code>connectionId</code> let the agent route itself.</p>
+          </div>
+          <div class="card">
+            <h3>MCP Apps Result Viewer</h3>
+            <p><code>find</code>, <code>aggregate</code>, and <code>sample-documents</code> render an interactive table inside Claude Desktop / Web and VS Code Copilot. Non-Apps hosts fall back to JSON.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- CODE MODE -->
+      <section class="wrap">
+        <div class="code-mode reveal">
+          <h2>Code Mode — one round trip, not N+1.</h2>
+          <p>
+            The <code style="font-family: var(--mono); color: var(--accent)">execute-typescript</code> MCP tool lets the AI write a small TypeScript program that composes multiple queries inside a QuickJS WebAssembly isolate. One round trip in, one structured result out — instead of N+1 separate tool calls.
+          </p>
+          <ul class="code-mode-bullets">
+            <li><b>Math is correct.</b> Sums, averages, percentages run as real JavaScript.</li>
+            <li><b>Token cost drops.</b> A query touching 500 docs lives and dies inside the isolate.</li>
+            <li><b>Security unchanged.</b> Same validation pipeline, hidden fields stripped before data crosses in.</li>
+          </ul>
+
+          <div class="simulator">
+            <div class="sim-pane">
+              <div class="sim-head">
+                <span>isolate.ts</span>
+                <span class="sim-dots"><span></span><span></span><span></span></span>
+              </div>
+              <textarea id="sim-code" class="sim-body" spellcheck="false">const top = await external_find({
+  collection: "products",
+  limit: 5
+});
+const ratings = await Promise.all(
+  top.map(p =>
+    external_find({
+      collection: "ratings",
+      filter: { productId: p._id }
+    })
+  )
+);
+return top.map((p, i) => ({
+  name: p.name,
+  avgRating: ratings[i].reduce(
+    (s, r) => s + r.score, 0
+  ) / ratings[i].length
+}));</textarea>
+              <div class="sim-run">
+                <small>QuickJS / 30s / 128MB / 50 bridge calls</small>
+                <button class="btn btn-primary" id="sim-run-btn" style="padding: 6px 14px; font-size: 12px">▸ Run</button>
+              </div>
+            </div>
+
+            <div class="sim-pane">
+              <div class="sim-head">
+                <span>result.json</span>
+                <span style="color: var(--good)">●</span>
+              </div>
+              <pre class="sim-body" id="sim-output">// click Run to execute in the sandbox
+// (this is a mock — real runs happen on your server)</pre>
+              <div class="sim-run">
+                <small id="sim-stats">idle</small>
+              </div>
+            </div>
+          </div>
+
+          <p class="fine-print">Per execution: 30s wall-clock timeout, 128MB memory, 50 bridge calls, 256KB serialized result.</p>
+        </div>
+      </section>
+
+      <!-- FIELD VISIBILITY DEMO -->
+      <section class="wrap">
+        <div class="section-head reveal">
+          <h2>Toggle a field. Watch it disappear from the AI.</h2>
+          <p>
+            Click the chips below. Fields you turn off are stripped out of the MCP response before the model ever sees them — no masking, no fake data, no bypass.
+          </p>
+        </div>
+        <div class="visibility-demo reveal">
+          <div class="fields-panel">
+            <h4>// schema: users collection</h4>
+            <div class="field-chips" id="chips"></div>
+            <p style="margin-top: 18px; font-size: 13px; color: var(--text-faint); font-family: var(--mono)">
+              on = visible to AI &nbsp;·&nbsp; off = stripped at query time
+            </p>
+          </div>
+          <div class="json-panel">
+            <div class="sim-head">
+              <span>GET /mcp → find({ collection: "users", limit: 1 })</span>
+              <span style="color: var(--accent)">●</span>
+            </div>
+            <pre id="json-output"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- HOW IT WORKS -->
+      <section class="wrap" id="how">
+        <div class="section-head reveal">
+          <h2>How it works</h2>
+          <p>Three steps, one architecture. No CDC, no replication lag, no mystery.</p>
+        </div>
+        <div class="steps reveal">
+          <div class="step">
+            <div class="step-num">01</div>
+            <b>Connect</b>
+            <p>Paste your MongoDB or PostgreSQL connection string in the dashboard.</p>
+          </div>
+          <div class="step">
+            <div class="step-num">02</div>
+            <b>Configure</b>
+            <p>Browse real sample data, toggle which fields the AI can see.</p>
+          </div>
+          <div class="step">
+            <div class="step-num">03</div>
+            <b>Query</b>
+            <p>Give your AI agent <code>https://&lt;your-domain&gt;/mcp</code> — done.</p>
+          </div>
+        </div>
+        <pre class="arch reveal">┌─────────────────────────────────────────────────┐
+│                   Your Server                     │
+│                                                   │
+│  ┌──────────────┐       ┌───────────────┐        │
+│  │  Dashboard    │──────>│  SQLite       │        │
+│  │  + API + MCP  │       │  (config only)│        │
+│  │  :3100        │       └───────────────┘        │
+│  └──────────────┘                                 │
+│                          ┌───────────────┐        │
+│                          │  Sandbox      │<── clone from prod
+│                          │  Mongo / PG   │        │
+│                          └───────────────┘        │
+└─────────────────────────────────────────────────┘
+         ^
+         │ MCP (Streamable HTTP)
+   Claude / ChatGPT / Cursor</pre>
+      </section>
+
+      <!-- COMPARE -->
+      <section class="wrap">
+        <div class="section-head reveal">
+          <h2>Without AskDB vs. With AskDB</h2>
+          <p>Everything on the left is a pattern people use today because the tooling hasn't caught up.</p>
+        </div>
+        <div class="compare reveal">
+          <div class="compare-col bad">
+            <h3>Without AskDB</h3>
+            <ul>
+              <li>Share raw MongoDB or Postgres credentials with AI tools and hope nothing gets written.</li>
+              <li>Export CSVs to ChatGPT. Stale within hours. GDPR violated.</li>
+              <li>Spin up Metabase/Looker for weeks. AI agent still can't use it.</li>
+              <li>Business asks "pro users this week?" and waits for an engineer.</li>
+              <li>No idea what the AI queried or when.</li>
+              <li>AI can see <code>orders</code> but not <code>email</code> or <code>credit_card</code>? Not possible.</li>
+            </ul>
+          </div>
+          <div class="compare-col good">
+            <h3>With AskDB</h3>
+            <ul>
+              <li>Sandbox isolation. AI queries a read-only copy. Production never touched.</li>
+              <li>Real-time queries against live sandbox data. PII auto-hidden.</li>
+              <li>One MCP endpoint. Claude, ChatGPT, Cursor — minutes, not weeks.</li>
+              <li>They ask the AI agent directly. Answer in seconds.</li>
+              <li>Full audit trail. Every query, timestamp, result count.</li>
+              <li>Field-level toggles. Hide specific fields, not entire collections.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- INSTALL -->
+      <section class="wrap" id="install">
+        <div class="section-head reveal">
+          <h2>Install on a fresh VPS in 2 minutes</h2>
+          <p>One command. Docker, Caddy, HTTPS, all wired up.</p>
+        </div>
+        <div class="install reveal">
+          <div class="terminal">
+            <div class="terminal-head">
+              <span style="font-family: var(--mono); font-size: 12px; color: var(--text-dim)">bash — VPS</span>
+              <button class="copy-btn" data-copy="curl -fsSL https://raw.githubusercontent.com/mgorabbani/askdb/main/install.sh | sudo bash">copy</button>
+            </div>
+            <div class="terminal-body"><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/mgorabbani/askdb/main/install.sh | sudo bash</div>
+          </div>
+
+          <div class="install-modes">
+            <div class="mode">
+              <b>Caddy (default)</b>
+              <p>Auto-provisioned HTTPS. Requires a domain + A record.</p>
+            </div>
+            <div class="mode">
+              <b>Proxyless</b>
+              <p>Bring your own reverse proxy (Coolify, Traefik, nginx). Binds <code>127.0.0.1:3100</code>.</p>
+            </div>
+            <div class="mode">
+              <b>Cloudflare Tunnel</b>
+              <p>No open ports. Paste your tunnel token when prompted.</p>
+            </div>
+          </div>
+
+          <p class="fine-print" style="text-align: center; margin-top: 22px">
+            Total time on a fresh VPS: 2–3 minutes &middot; Ubuntu 22.04+ / Debian 12+
+          </p>
+        </div>
+      </section>
+
+      <!-- CONNECT AI -->
+      <section class="wrap">
+        <div class="section-head reveal">
+          <h2>Plug into your AI tool</h2>
+          <p>Paste <code>https://&lt;your-domain&gt;/mcp</code> into Claude or Cursor and complete the OAuth approval. For Claude Code/Cursor local configs, use a bearer token:</p>
+        </div>
+        <div class="reveal">
+          <div class="tabs">
+            <button class="tab active" data-tab="claude">Claude Desktop / Code</button>
+            <button class="tab" data-tab="cursor">Cursor</button>
+          </div>
+          <div class="tab-panel active" id="tab-claude">
+            <div class="terminal">
+              <div class="terminal-head">
+                <span style="font-family: var(--mono); font-size: 12px; color: var(--text-dim)">~/Library/Application Support/Claude/claude_desktop_config.json</span>
+                <button class="copy-btn" data-copy='{ "askdb": { "type": "streamable-http", "url": "https://YOUR_SERVER/mcp", "headers": { "Authorization": "Bearer ask_sk_YOUR_KEY" } } }'>copy</button>
+              </div>
+              <pre class="terminal-body" style="margin: 0">{
+  "askdb": {
+    "type": "streamable-http",
+    "url": "https://YOUR_SERVER/mcp",
+    "headers": {
+      "Authorization": "Bearer ask_sk_YOUR_KEY"
+    }
+  }
+}</pre>
+            </div>
+          </div>
+          <div class="tab-panel" id="tab-cursor">
+            <div class="terminal">
+              <div class="terminal-head">
+                <span style="font-family: var(--mono); font-size: 12px; color: var(--text-dim)">~/.cursor/mcp.json</span>
+                <button class="copy-btn" data-copy='{ "mcpServers": { "askdb": { "url": "https://YOUR_SERVER/mcp", "headers": { "Authorization": "Bearer ask_sk_YOUR_KEY" } } } }'>copy</button>
+              </div>
+              <pre class="terminal-body" style="margin: 0">{
+  "mcpServers": {
+    "askdb": {
+      "url": "https://YOUR_SERVER/mcp",
+      "headers": {
+        "Authorization": "Bearer ask_sk_YOUR_KEY"
+      }
+    }
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECURITY -->
+      <section class="wrap">
+        <div class="section-head reveal">
+          <h2>Security invariants</h2>
+          <p>Nine rules that always hold. Every release CI run proves them end-to-end against a real Mongo and a real Postgres.</p>
+        </div>
+        <div class="security-grid reveal">
+          <div class="sec">Production databases are never written to — read-only connections only.</div>
+          <div class="sec">Hidden fields never appear in MCP responses — stripped at query time.</div>
+          <div class="sec">Hidden collections are never listed or queryable.</div>
+          <div class="sec">All queries validated — only <code>find</code>, <code>aggregate</code>, <code>count</code>, <code>distinct</code> allowed.</div>
+          <div class="sec">Dangerous aggregation stages blocked (<code>$merge</code>, <code>$out</code>, <code>$collStats</code>, etc.).</div>
+          <div class="sec"><code>$lookup</code> on hidden collections is rejected.</div>
+          <div class="sec">Connection strings encrypted at rest (AES-256-GCM), never logged.</div>
+          <div class="sec">API keys hashed (SHA-256), shown once, never stored in plaintext.</div>
+          <div class="sec">Every MCP query logged to the audit trail.</div>
+        </div>
+        <div class="callout">
+          <b>Docker socket hardening:</b> a <code>tecnativa/docker-socket-proxy</code> sidecar ensures AskDB never has direct access to <code>/var/run/docker.sock</code>.
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section class="wrap">
+        <div class="section-head reveal">
+          <h2>Frequently asked</h2>
+        </div>
+        <div class="faq reveal">
+          <details>
+            <summary>How long does setup take?</summary>
+            <p>Under 10 minutes. Paste your MongoDB or Postgres URL, configure visibility, copy the MCP URL into your AI tool.</p>
+          </details>
+          <details>
+            <summary>Does AskDB write to my production database?</summary>
+            <p>Never. It connects read-only to run <code>mongodump</code> (Mongo) or <code>pg_dump</code> (Postgres), then all queries go against the sandbox copy.</p>
+          </details>
+          <details>
+            <summary>How is field filtering different from data masking?</summary>
+            <p>Data masking replaces values with fakes. AskDB simply omits hidden fields entirely — the AI doesn't know they exist.</p>
+          </details>
+          <details>
+            <summary>Which databases are supported today?</summary>
+            <p>MongoDB and PostgreSQL, both first-class. Pick the engine when you add a connection, or mix them in one workspace. MySQL is next on the roadmap.</p>
+          </details>
+          <details>
+            <summary>Can I connect more than one database at once?</summary>
+            <p>Yes. Every connection gets a plain-language description. Agents see a <code>databases://overview</code> plus a <code>list-databases</code> tool and pass a <code>connectionId</code> into every query call.</p>
+          </details>
+          <details>
+            <summary>How does the sandbox stay fresh?</summary>
+            <p>Manual sync — click "Sync Now" in the dashboard. Scheduled sync is on the roadmap.</p>
+          </details>
+          <details>
+            <summary>Is this secure enough for production data?</summary>
+            <p>Read-only access, field stripping at query time, query validation, encrypted connection strings, full audit logging. See the security section above.</p>
+          </details>
+          <details>
+            <summary>Is it really open source?</summary>
+            <p>Yes — AGPLv3. Fork it, run it, modify it. If you run a modified version as a network service, share your modifications back.</p>
+          </details>
+        </div>
+      </section>
+
+      <!-- FINAL CTA -->
+      <section class="final-cta wrap">
+        <p>Ready in 2 minutes on a fresh VPS.</p>
+        <div class="terminal" style="max-width: 720px; margin: 0 auto">
+          <div class="terminal-head">
+            <span style="font-family: var(--mono); font-size: 12px; color: var(--text-dim)">install</span>
+            <button class="copy-btn" data-copy="curl -fsSL https://raw.githubusercontent.com/mgorabbani/askdb/main/install.sh | sudo bash">copy</button>
+          </div>
+          <div class="terminal-body"><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/mgorabbani/askdb/main/install.sh | sudo bash</div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="brand">
+            <img src="assets/logo.png" alt="AskDB" />AskDB
+          </div>
+          <p>Open source under AGPLv3. Built for people who want AI to understand their data, not own it.</p>
+        </div>
+        <div>
+          <h5>Product</h5>
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <a href="#install">Install</a>
+        </div>
+        <div>
+          <h5>Resources</h5>
+          <a href="https://github.com/mgorabbani/askdb" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/mgorabbani/askdb#readme" target="_blank" rel="noopener">Docs</a>
+          <a href="https://github.com/mgorabbani/askdb/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+          <a href="https://github.com/mgorabbani/askdb/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+        </div>
+        <div>
+          <h5>Community</h5>
+          <a href="https://github.com/mgorabbani/askdb/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://github.com/mgorabbani/askdb/discussions" target="_blank" rel="noopener">Discussions</a>
+          <a href="https://github.com/mgorabbani/askdb/blob/main/SECURITY.md" target="_blank" rel="noopener">Security Policy</a>
+        </div>
+      </div>
+      <div class="footer-bottom">© AskDB &middot; AGPLv3</div>
+    </footer>
+
+    <script>
+      // Cursor glow
+      (function () {
+        const g = document.getElementById("cursor-glow");
+        if (!g || window.matchMedia("(pointer: coarse)").matches) return;
+        window.addEventListener("mousemove", (e) => {
+          g.style.opacity = "1";
+          g.style.left = e.clientX + "px";
+          g.style.top = e.clientY + "px";
+        });
+        window.addEventListener("mouseleave", () => (g.style.opacity = "0"));
+      })();
+
+      // Scroll reveals
+      (function () {
+        const els = document.querySelectorAll(".reveal");
+        const io = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((e) => {
+              if (e.isIntersecting) {
+                e.target.classList.add("in");
+                io.unobserve(e.target);
+              }
+            });
+          },
+          { threshold: 0.12 }
+        );
+        els.forEach((el) => io.observe(el));
+      })();
+
+      // Copy buttons
+      document.querySelectorAll(".copy-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(btn.dataset.copy);
+            const old = btn.textContent;
+            btn.textContent = "copied ✓";
+            btn.classList.add("copied");
+            setTimeout(() => {
+              btn.textContent = old;
+              btn.classList.remove("copied");
+            }, 1500);
+          } catch {
+            btn.textContent = "failed";
+          }
+        });
+      });
+
+      // Tabs
+      document.querySelectorAll(".tab").forEach((t) => {
+        t.addEventListener("click", () => {
+          const key = t.dataset.tab;
+          document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
+          document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + key));
+        });
+      });
+
+      // === Code Mode simulator ===
+      (function () {
+        const btn = document.getElementById("sim-run-btn");
+        const out = document.getElementById("sim-output");
+        const stats = document.getElementById("sim-stats");
+        if (!btn) return;
+
+        const mockResult = [
+          { name: "Quran Focus Pro", avgRating: 4.82 },
+          { name: "Tafsir Companion", avgRating: 4.71 },
+          { name: "Hadith Memory Deck", avgRating: 4.65 },
+          { name: "Arabic Root Explorer", avgRating: 4.54 },
+          { name: "Daily Adhkar", avgRating: 4.48 },
+        ];
+
+        btn.addEventListener("click", () => {
+          btn.disabled = true;
+          btn.textContent = "⟳ Running…";
+          out.textContent = "// booting QuickJS isolate…";
+          stats.textContent = "bridge calls: 0";
+
+          let calls = 0;
+          const tick = setInterval(() => {
+            calls++;
+            stats.textContent = "bridge calls: " + calls + " / 50";
+            if (calls === 1) out.textContent = "// external_find({ collection: \"products\", limit: 5 })";
+            if (calls === 2) out.textContent += "\n// external_find × 5 (ratings per product)";
+            if (calls === 6) {
+              clearInterval(tick);
+              const json = JSON.stringify(mockResult, null, 2);
+              out.textContent = "// 6 bridge calls · 47ms · 312 bytes\n\n" + json;
+              stats.textContent = "bridge calls: 6 / 50 · 47ms";
+              btn.disabled = false;
+              btn.textContent = "▸ Run";
+            }
+          }, 180);
+        });
+      })();
+
+      // === Field visibility demo ===
+      (function () {
+        const sample = [
+          { key: "_id", value: '"usr_0001"', kind: "str", sensitive: false },
+          { key: "email", value: '"jane@acme.io"', kind: "str", sensitive: true },
+          { key: "password_hash", value: '"$2b$12$9xK…"', kind: "str", sensitive: true },
+          { key: "full_name", value: '"Jane Cooper"', kind: "str", sensitive: false },
+          { key: "ssn", value: '"123-45-6789"', kind: "str", sensitive: true },
+          { key: "plan", value: '"pro"', kind: "str", sensitive: false },
+          { key: "signup_ts", value: "1733184000", kind: "num", sensitive: false },
+        ];
+
+        const chips = document.getElementById("chips");
+        const out = document.getElementById("json-output");
+        if (!chips || !out) return;
+
+        const state = {};
+        sample.forEach((f) => (state[f.key] = !f.sensitive)); // sensitive default off
+
+        function render() {
+          chips.innerHTML = "";
+          sample.forEach((f) => {
+            const c = document.createElement("button");
+            c.className = "chip " + (state[f.key] ? "on" : "off");
+            c.textContent = f.key;
+            c.addEventListener("click", () => {
+              state[f.key] = !state[f.key];
+              render();
+            });
+            chips.appendChild(c);
+          });
+
+          const lines = ["{"];
+          const visible = sample.filter((f) => state[f.key]);
+          sample.forEach((f, i) => {
+            const isLast = sample.indexOf(f) === sample.length - 1;
+            const valClass = f.kind === "str" ? "json-str" : "json-num";
+            const line =
+              '  <span class="json-key">"' + f.key + '"</span>: <span class="' + valClass + '">' + f.value + "</span>" + (isLast ? "" : ",");
+            if (state[f.key]) {
+              lines.push(line);
+            } else {
+              lines.push('  <span class="hidden-row">' + line.replace(/<[^>]+>/g, "") + "</span>");
+            }
+          });
+          lines.push("}");
+          out.innerHTML = lines.join("\n");
+        }
+
+        render();
+      })();
+    </script>
+  </body>
+</html>
