@@ -98,7 +98,7 @@ importers:
         specifier: ^7.1.1
         version: 7.1.1
       pg:
-        specifier: ^8.13.1
+        specifier: ^8.20.0
         version: 8.20.0
     devDependencies:
       '@types/better-sqlite3':
@@ -111,7 +111,7 @@ importers:
         specifier: ^25.6.0
         version: 25.6.0
       '@types/pg':
-        specifier: ^8.11.10
+        specifier: ^8.20.0
         version: 8.20.0
       drizzle-kit:
         specifier: ^0.31.10
