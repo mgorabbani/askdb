@@ -2,61 +2,36 @@ name: release
 
 on:
   push:
-    tags:
-      - "v*.*.*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to release (e.g. v1.2.3)"
-        required: true
+    tags: ["v*.*.*"]
 
 permissions:
   contents: write
   packages: write
-  id-token: write
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  docker:
-    name: Build & push multi-arch image
+  release:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      - uses: docker/metadata-action@v5
         id: meta
-        uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest
 
-      - name: Build & push
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -65,81 +40,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: true
-          sbom: true
 
-  release:
-    name: Create GitHub Release
-    needs: docker
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - uses: softprops/action-gh-release@v2
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-          fetch-depth: 0
-
-      - name: Resolve tag
-        id: tag
-        run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          echo "name=$TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Pin install.sh / uninstall.sh to this tag
-        run: |
-          mkdir -p dist
-          cp install.sh uninstall.sh dist/
-          sed -i "s|ASKDB_VERSION:-main|ASKDB_VERSION:-${{ steps.tag.outputs.name }}|" dist/install.sh
-
-      - name: Generate checksums
-        working-directory: dist
-        run: |
-          sha256sum install.sh uninstall.sh > SHA256SUMS
-          cat SHA256SUMS
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          PREV=$(git describe --tags --abbrev=0 "${{ steps.tag.outputs.name }}^" 2>/dev/null || echo "")
-          {
-            echo "## What's changed"
-            echo ""
-            if [ -n "$PREV" ]; then
-              git log --pretty=format:'- %s (%h)' "$PREV..${{ steps.tag.outputs.name }}"
-            else
-              git log --pretty=format:'- %s (%h)' "${{ steps.tag.outputs.name }}"
-            fi
-            echo ""
-            echo ""
-            echo "## Install"
-            echo ""
-            echo '```sh'
-            echo "curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.name }}/install.sh | sudo bash"
-            echo '```'
-            echo ""
-            echo "## Verify"
-            echo ""
-            echo '```sh'
-            echo "curl -fsSL -O https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.name }}/install.sh"
-            echo "curl -fsSL -O https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.name }}/SHA256SUMS"
-            echo "sha256sum -c SHA256SUMS"
-            echo '```'
-            echo ""
-            echo "## Docker image"
-            echo ""
-            echo '```'
-            echo "ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.name }}"
-            echo '```'
-          } > CHANGELOG_RELEASE.md
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.name }}
-          name: ${{ steps.tag.outputs.name }}
-          body_path: CHANGELOG_RELEASE.md
-          draft: false
-          prerelease: ${{ contains(steps.tag.outputs.name, '-') }}
+          generate_release_notes: true
           files: |
-            dist/install.sh
-            dist/uninstall.sh
-            dist/SHA256SUMS
+            install.sh
+            uninstall.sh
