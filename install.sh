@@ -281,6 +281,7 @@ if [ "${PROFILE:-caddy}" = "proxyless" ]; then
   Upgrade:    cd $INSTALL_DIR && sudo bash <(curl -fsSL $REPO_RAW/install.sh)
   Logs:       cd $INSTALL_DIR && docker compose logs -f askdb
   Stop:       cd $INSTALL_DIR && docker compose down
+  Uninstall:  sudo bash <(curl -fsSL $REPO_RAW/uninstall.sh) --purge --backup /root/askdb-backup.tgz
   Install log: $LOG_FILE
 
   Your data lives in the docker volume 'askdb-data' — back it up with:
@@ -301,6 +302,7 @@ else
   Upgrade:    cd $INSTALL_DIR && sudo bash <(curl -fsSL $REPO_RAW/install.sh)
   Logs:       cd $INSTALL_DIR && docker compose logs -f askdb
   Stop:       cd $INSTALL_DIR && docker compose down
+  Uninstall:  sudo bash <(curl -fsSL $REPO_RAW/uninstall.sh) --purge --backup /root/askdb-backup.tgz
   Install log: $LOG_FILE
 
   Your data lives in the docker volume 'askdb-data' — back it up with:
