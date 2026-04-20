@@ -231,7 +231,7 @@ The AI never knows hidden fields exist. Hidden collections are excluded from met
 
 On a fresh Ubuntu 22.04+ or Debian 12+ VPS:
 
-    curl -fsSL https://raw.githubusercontent.com/mgorabbani/askdb/main/install.sh | sudo bash
+    curl -fsSL https://github.com/mgorabbani/askdb/releases/latest/download/install.sh | sudo bash
 
 The installer will:
 - Install Docker if it's missing (after asking).
@@ -275,9 +275,17 @@ The installer offers three modes:
 
 ### Upgrade
 
-    cd /opt/askdb && sudo bash <(curl -fsSL https://raw.githubusercontent.com/mgorabbani/askdb/main/install.sh)
+    sudo bash <(curl -fsSL https://github.com/mgorabbani/askdb/releases/latest/download/install.sh)
 
 The installer is idempotent — re-running it against an existing install pulls the latest images and restarts. Secrets, data, and your `.env` are preserved.
+
+### Uninstall
+
+    # stop containers, keep data
+    sudo bash <(curl -fsSL https://github.com/mgorabbani/askdb/releases/latest/download/uninstall.sh)
+
+    # stop containers AND delete the askdb-data volume + /opt/askdb
+    sudo bash <(curl -fsSL https://github.com/mgorabbani/askdb/releases/latest/download/uninstall.sh) --purge
 
 ### Backups
 
