@@ -63,6 +63,7 @@ export const connections = sqliteTable("connections", {
   connectionString: text("connectionString").notNull(), // AES-256-GCM encrypted
   sandboxContainerId: text("sandboxContainerId"),
   sandboxPort: integer("sandboxPort"),
+  sandboxPassword: text("sandboxPassword"), // AES-256-GCM encrypted, random per sandbox
   syncStatus: text("syncStatus").notNull().default("IDLE"),
   syncError: text("syncError"),
   lastSyncAt: integer("lastSyncAt", { mode: "timestamp" }),
@@ -228,6 +229,10 @@ export const oauthRefreshTokens = sqliteTable("oauth_refresh_tokens", {
   resource: text("resource").notNull(),
   expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
   revokedAt: integer("revokedAt", { mode: "timestamp" }),
+  // OAuth 2.1 reuse detection: all refresh tokens minted from the same original
+  // grant share a familyId. Using a revoked sibling re-token revokes the entire
+  // family so a stolen token can't outlive a legitimate rotation.
+  familyId: text("familyId").notNull().default(""),
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -245,4 +250,21 @@ export const auditLogs = sqliteTable("audit_logs", {
   apiKeyId: text("apiKeyId")
     .notNull()
     .references(() => apiKeys.id, { onDelete: "cascade" }),
+});
+
+// Security-relevant auth events (sign-in attempts, OAuth client registration,
+// token reuse detection, etc.). Kept separate from auditLogs because not every
+// event is tied to a connection/apiKey.
+export const authAuditLogs = sqliteTable("auth_audit_logs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  event: text("event").notNull(), // e.g. "oauth.refresh_reuse_detected"
+  outcome: text("outcome").notNull().default("info"), // info | success | failure
+  userId: text("userId"), // nullable — pre-auth events
+  clientId: text("clientId"),
+  ipAddress: text("ipAddress"),
+  userAgent: text("userAgent"),
+  details: text("details"), // JSON blob, optional
+  createdAt: integer("createdAt", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
 });

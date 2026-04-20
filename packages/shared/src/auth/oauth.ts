@@ -7,6 +7,7 @@ import * as schema from "../db/schema.js";
 
 const {
   apiKeys,
+  authAuditLogs,
   connections,
   oauthAccessTokens,
   oauthAuthorizationCodes,
@@ -67,6 +68,7 @@ interface StoredGrant {
 
 interface IssueOAuthTokensInput extends StoredGrant {
   now?: Date;
+  familyId?: string;
 }
 
 interface IssueOAuthTokensResult {
@@ -85,9 +87,12 @@ export function getAccessTokenTtlSeconds(): number {
 }
 
 export function getRefreshTokenTtlSeconds(): number {
+  // 7 days by default — long enough for well-behaved clients to keep silently
+  // refreshing, short enough that a stolen token eventually expires even if
+  // reuse detection misses it.
   return parsePositiveInt(
     process.env.MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS,
-    60 * 60 * 24 * 30
+    60 * 60 * 24 * 7
   );
 }
 
@@ -133,26 +138,102 @@ export function getOAuthClient(database: AskDb, clientId: string): OAuthClientRe
   return JSON.parse(decrypt(row.encryptedClient)) as OAuthClientRecord;
 }
 
+// RFC 9700 §4.1.3 + OAuth 2.1 §4.1.2.1: redirect_uris must be absolute,
+// use https (native apps may use http://localhost or a private-use scheme),
+// have no fragment, and no userinfo. Public-internet deployments must also
+// reject SSRF-friendly hosts: RFC1918, link-local (169.254/16), loopback
+// (when the deployment is not meant to be local), and cloud metadata IPs.
+//
+// Callers that need to allow loopback (e.g. IDE/CLI flows registering
+// http://127.0.0.1:PORT) pass allowLoopback: true.
+export function validateRedirectUri(raw: unknown, opts: { allowLoopback?: boolean } = {}): string {
+  const allowLoopback = opts.allowLoopback ?? true;
+  if (typeof raw !== "string" || raw.includes("*") || raw.length > 2048) {
+    throw new Error(`invalid redirect_uri: ${String(raw)}`);
+  }
+
+  let parsed: URL;
+  try { parsed = new URL(raw); } catch { throw new Error(`invalid redirect_uri: ${raw}`); }
+
+  if (parsed.hash && parsed.hash.length > 0) {
+    throw new Error(`redirect_uri must not contain a fragment: ${raw}`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`redirect_uri must not contain userinfo: ${raw}`);
+  }
+
+  const isHttps = parsed.protocol === "https:";
+  const isHttp = parsed.protocol === "http:";
+  const isPrivateUseScheme = /^[a-z][a-z0-9+.-]*:$/i.test(parsed.protocol) && !isHttp && !isHttps;
+
+  if (!isHttps && !isHttp && !isPrivateUseScheme) {
+    throw new Error(`redirect_uri must use https or a private-use scheme: ${raw}`);
+  }
+
+  if (isHttp) {
+    // Only http://localhost / 127.0.0.1 / ::1 are allowed, for loopback flows.
+    if (!allowLoopback) {
+      throw new Error(`redirect_uri must use https: ${raw}`);
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (host !== "localhost" && host !== "127.0.0.1" && host !== "[::1]" && host !== "::1") {
+      throw new Error(`http redirect_uri is only allowed for loopback: ${raw}`);
+    }
+    return raw;
+  }
+
+  if (isHttps) {
+    const host = parsed.hostname.toLowerCase();
+    // Reject IP literals that would indicate SSRF targets — private ranges,
+    // link-local, loopback, cloud metadata. Hostnames are allowed; if an
+    // attacker resolves a hostname to a private IP we can't prevent that at
+    // registration time, but we close the obvious door.
+    if (isIpLiteral(host) && isDisallowedIp(host)) {
+      throw new Error(`redirect_uri host is not allowed: ${raw}`);
+    }
+  }
+
+  return raw;
+}
+
 function validateRedirectUris(uris: unknown): string[] {
   if (!Array.isArray(uris) || uris.length === 0 || uris.length > 5) {
     throw new Error("redirect_uris must be an array of 1–5 URIs");
   }
-  const result: string[] = [];
-  for (const raw of uris) {
-    if (typeof raw !== "string" || raw.includes("*")) {
-      throw new Error(`invalid redirect_uri: ${String(raw)}`);
-    }
-    let parsed: URL;
-    try { parsed = new URL(raw); } catch { throw new Error(`invalid redirect_uri: ${raw}`); }
-    const isHttps = parsed.protocol === "https:";
-    const isLocalhostHttp = parsed.protocol === "http:" &&
-      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1");
-    if (!isHttps && !isLocalhostHttp) {
-      throw new Error(`redirect_uri must be https, or http://localhost for local dev: ${raw}`);
-    }
-    result.push(raw);
+  return uris.map((u) => validateRedirectUri(u));
+}
+
+function isIpLiteral(host: string): boolean {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return true;
+  if (host.startsWith("[") && host.endsWith("]")) return true;
+  if (host.includes(":")) return true;
+  return false;
+}
+
+function isDisallowedIp(host: string): boolean {
+  const bare = host.replace(/^\[|\]$/g, "");
+
+  // IPv4
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(bare)) {
+    const [a, b] = bare.split(".").map((n) => Number.parseInt(n, 10));
+    if (a === 10) return true;                               // 10.0.0.0/8
+    if (a === 127) return true;                              // loopback
+    if (a === 169 && b === 254) return true;                 // link-local, AWS metadata
+    if (a === 172 && b! >= 16 && b! <= 31) return true;      // 172.16.0.0/12
+    if (a === 192 && b === 168) return true;                 // 192.168.0.0/16
+    if (a === 100 && b! >= 64 && b! <= 127) return true;     // CGNAT 100.64/10
+    if (a === 0) return true;
+    if (a! >= 224) return true;                              // multicast + reserved
+    return false;
   }
-  return result;
+
+  // IPv6 — reject loopback, link-local, unique-local.
+  const lower = bare.toLowerCase();
+  if (lower === "::1") return true;
+  if (lower.startsWith("fe80:")) return true;                // link-local
+  if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA fc00::/7
+  if (lower === "::") return true;
+  return false;
 }
 
 export function storeOAuthClient(
@@ -189,6 +270,20 @@ export function storeOAuthClient(
       updatedAt: now,
     }).run();
   }
+
+  recordAuthAudit(
+    database,
+    {
+      event: existing ? "oauth.client_updated" : "oauth.client_registered",
+      outcome: "info",
+      clientId: client.client_id,
+      details: {
+        client_name: client.client_name ?? null,
+        redirect_uri_count: client.redirect_uris.length,
+      },
+    },
+    now
+  );
 
   return client;
 }
@@ -308,15 +403,13 @@ export function exchangeRefreshTokenGrant(
   }
 ) {
   const now = input.now ?? new Date();
+  const tokenHash = hashValue(input.refreshToken);
+  // Fetch the row regardless of revocation so we can detect re-use of an
+  // already-rotated refresh token (OAuth 2.1 §4.2.2 / RFC 9700 §4.14).
   const row = database
     .select()
     .from(oauthRefreshTokens)
-    .where(
-      and(
-        eq(oauthRefreshTokens.tokenHash, hashValue(input.refreshToken)),
-        isNull(oauthRefreshTokens.revokedAt)
-      )
-    )
+    .where(eq(oauthRefreshTokens.tokenHash, tokenHash))
     .get();
 
   if (!row || row.expiresAt.getTime() <= now.getTime()) {
@@ -325,6 +418,47 @@ export function exchangeRefreshTokenGrant(
 
   if (row.clientId !== input.client.client_id) {
     throw new Error("Refresh token was issued to a different client");
+  }
+
+  if (row.revokedAt !== null) {
+    // Reuse detected — invalidate the entire family and any access tokens it
+    // minted. The attacker (or benign client with bad retry logic) gets kicked
+    // out, and the legitimate holder will be forced to re-authorize.
+    if (row.familyId) {
+      database
+        .update(oauthRefreshTokens)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(oauthRefreshTokens.familyId, row.familyId),
+            isNull(oauthRefreshTokens.revokedAt)
+          )
+        )
+        .run();
+      database
+        .update(oauthAccessTokens)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(oauthAccessTokens.clientId, row.clientId),
+            eq(oauthAccessTokens.userId, row.userId),
+            isNull(oauthAccessTokens.revokedAt)
+          )
+        )
+        .run();
+    }
+    recordAuthAudit(
+      database,
+      {
+        event: "oauth.refresh_reuse_detected",
+        outcome: "failure",
+        userId: row.userId,
+        clientId: row.clientId,
+        details: { familyId: row.familyId || null },
+      },
+      now
+    );
+    throw new Error("Refresh token reuse detected");
   }
 
   const originalScopes = parseScopes(row.scopes);
@@ -355,6 +489,7 @@ export function exchangeRefreshTokenGrant(
     resource,
     scopes: nextScopes,
     userId: row.userId,
+    familyId: row.familyId || undefined,
     now,
   }).response;
 }
@@ -442,6 +577,7 @@ function issueOAuthTokens(
   const accessTokenExpiresAt = new Date(now.getTime() + getAccessTokenTtlSeconds() * 1000);
   const refreshTokenExpiresAt = new Date(now.getTime() + getRefreshTokenTtlSeconds() * 1000);
   const serializedScopes = serializeScopes(input.scopes);
+  const familyId = input.familyId ?? randomBytes(16).toString("hex");
 
   database.insert(oauthAccessTokens).values({
     id: createStableId("access", `${input.clientId}:${now.toISOString()}:${accessToken}`),
@@ -466,6 +602,7 @@ function issueOAuthTokens(
     resource: input.resource,
     expiresAt: refreshTokenExpiresAt,
     revokedAt: null,
+    familyId,
     createdAt: now,
   }).run();
 
@@ -548,4 +685,37 @@ function serializeScopes(scopes: string[]): string {
 function parseScopes(serialized: string): string[] {
   if (!serialized.trim()) return [];
   return uniqueSorted(serialized.split(/\s+/).filter(Boolean));
+}
+
+export interface AuthAuditEvent {
+  event: string;
+  outcome?: "info" | "success" | "failure";
+  userId?: string | null;
+  clientId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  details?: Record<string, unknown> | null;
+}
+
+export function recordAuthAudit(
+  database: AskDb,
+  evt: AuthAuditEvent,
+  now: Date = new Date()
+): void {
+  try {
+    database.insert(authAuditLogs).values({
+      event: evt.event,
+      outcome: evt.outcome ?? "info",
+      userId: evt.userId ?? null,
+      clientId: evt.clientId ?? null,
+      ipAddress: evt.ipAddress ?? null,
+      userAgent: evt.userAgent ?? null,
+      details: evt.details ? JSON.stringify(evt.details) : null,
+      createdAt: now,
+    }).run();
+  } catch (err) {
+    // Never let audit-log failures break auth. Log to stderr and move on.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[askdb] auth audit log failed for ${evt.event}: ${msg}`);
+  }
 }

@@ -20,24 +20,32 @@ export {
   getOAuthClient,
   getRefreshTokenTtlSeconds,
   normalizeOAuthScopes,
+  recordAuthAudit,
   revokeOAuthToken,
   storeOAuthClient,
+  validateRedirectUri,
   verifyOAuthAccessToken,
 } from "./auth/oauth.js";
 export type {
+  AuthAuditEvent,
   OAuthClientRecord,
   OAuthVerifiedAccessToken,
 } from "./auth/oauth.js";
 export type { DatabaseAdapter, IntrospectionResult, QueryResult } from "./adapters/types.js";
 export { MongoDBAdapter } from "./adapters/mongodb/index.js";
 export { PostgreSQLAdapter } from "./adapters/postgresql/index.js";
-export { getAdapter, normalizeDbType, SUPPORTED_DB_TYPES } from "./adapters/factory.js";
+export { getAdapter, normalizeDbType, SUPPORTED_DB_TYPES, assertValidDatabaseName } from "./adapters/factory.js";
 export type { SupportedDbType } from "./adapters/factory.js";
 export { syncConnection } from "./adapters/sync.js";
 export { startSyncScheduler, stopSyncScheduler } from "./adapters/mongodb/scheduler.js";
 export { introspectAndSave } from "./adapters/mongodb/introspect.js";
 export { detectRelationships } from "./adapters/mongodb/relationships.js";
-export { sandboxManager } from "./docker/manager.js";
+export {
+  sandboxManager,
+  generateSandboxCredentials,
+  type SandboxCredentials,
+} from "./docker/manager.js";
+export { resolveSandboxCredentials } from "./adapters/sync.js";
 export { detectPii } from "./pii/patterns.js";
 export { extractPatterns, recordQueryForMemory } from "./memory/extractor.js";
 export { saveAgentInsight } from "./memory/insights.js";

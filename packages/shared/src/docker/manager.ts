@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import { existsSync } from "fs";
 import net from "net";
+import { randomBytes } from "crypto";
 import { normalizeDbType, type SupportedDbType } from "../adapters/factory.js";
 
 // When DOCKER_HOST is set (e.g. tcp://docker-socket-proxy:2375), dockerode
@@ -17,21 +18,41 @@ const VOLUME_PREFIX = "askdb-data-";
 const isInDocker = existsSync("/.dockerenv");
 const HOST = isInDocker ? "host.docker.internal" : "localhost";
 
+// Host interface sandbox ports bind to. Bare-metal runs bind to loopback so
+// sandbox DBs aren't reachable from the outside world. When askdb itself runs
+// in Docker the server reaches the sandbox via host.docker.internal, which on
+// Linux resolves to the Docker bridge IP, so loopback binding would break the
+// server→sandbox link. In that case we bind to all interfaces and rely on the
+// random per-sandbox password for access control — operators should still
+// firewall the sandbox port range (54320-54419, 27100-27199) via DOCKER-USER.
+const DEFAULT_BIND_HOST = isInDocker ? "0.0.0.0" : "127.0.0.1";
+const SANDBOX_BIND_HOST = process.env.SANDBOX_BIND_HOST || DEFAULT_BIND_HOST;
+
 // Cold start (especially on a fresh VPS pulling the image) can take 20-40s.
 const READY_TIMEOUT_SECONDS = parseInt(
   process.env.SANDBOX_READY_TIMEOUT_SECONDS ?? "60",
   10,
 );
 
+export interface SandboxCredentials {
+  user: string;
+  password: string;
+}
+
 interface DbTypeConfig {
   image: string;
   internalPort: number;
   portRangeStart: number;
   portRangeEnd: number;
-  env?: Record<string, string>;
   dataDir: string;
-  connectionString: (host: string, port: number) => string;
-  waitForReady: (host: string, port: number, timeoutSeconds: number) => Promise<void>;
+  buildEnv: (creds: SandboxCredentials) => Record<string, string>;
+  connectionString: (host: string, port: number, creds: SandboxCredentials) => string;
+  waitForReady: (
+    host: string,
+    port: number,
+    creds: SandboxCredentials,
+    timeoutSeconds: number,
+  ) => Promise<void>;
 }
 
 const DB_CONFIGS: Record<SupportedDbType, DbTypeConfig> = {
@@ -41,13 +62,19 @@ const DB_CONFIGS: Record<SupportedDbType, DbTypeConfig> = {
     portRangeStart: 27100,
     portRangeEnd: 27199,
     dataDir: "/data/db",
-    connectionString: (host, port) => `mongodb://${host}:${port}`,
-    async waitForReady(host, port, timeoutSeconds) {
+    buildEnv: (creds) => ({
+      MONGO_INITDB_ROOT_USERNAME: creds.user,
+      MONGO_INITDB_ROOT_PASSWORD: creds.password,
+    }),
+    connectionString: (host, port, creds) =>
+      `mongodb://${encodeURIComponent(creds.user)}:${encodeURIComponent(creds.password)}@${host}:${port}/?authSource=admin`,
+    async waitForReady(host, port, creds, timeoutSeconds) {
       const { MongoClient } = await import("mongodb");
+      const uri = this.connectionString(host, port, creds);
       const deadline = Date.now() + timeoutSeconds * 1000;
       while (Date.now() < deadline) {
         try {
-          const client = new MongoClient(`mongodb://${host}:${port}`, {
+          const client = new MongoClient(uri, {
             serverSelectionTimeoutMS: 2000,
             connectTimeoutMS: 2000,
           });
@@ -67,15 +94,15 @@ const DB_CONFIGS: Record<SupportedDbType, DbTypeConfig> = {
     internalPort: 5432,
     portRangeStart: 54320,
     portRangeEnd: 54419,
-    env: {
-      POSTGRES_PASSWORD: "askdb",
-      POSTGRES_USER: "askdb",
-      POSTGRES_DB: "postgres",
-    },
     dataDir: "/var/lib/postgresql/data",
-    connectionString: (host, port) =>
-      `postgresql://askdb:askdb@${host}:${port}/postgres`,
-    async waitForReady(host, port, timeoutSeconds) {
+    buildEnv: (creds) => ({
+      POSTGRES_USER: creds.user,
+      POSTGRES_PASSWORD: creds.password,
+      POSTGRES_DB: "postgres",
+    }),
+    connectionString: (host, port, creds) =>
+      `postgresql://${encodeURIComponent(creds.user)}:${encodeURIComponent(creds.password)}@${host}:${port}/postgres`,
+    async waitForReady(host, port, creds, timeoutSeconds) {
       const { Client } = await import("pg");
       const deadline = Date.now() + timeoutSeconds * 1000;
       while (Date.now() < deadline) {
@@ -95,7 +122,7 @@ const DB_CONFIGS: Record<SupportedDbType, DbTypeConfig> = {
           // Give Postgres a moment to accept auth after the port opens.
           try {
             const client = new Client({
-              connectionString: `postgresql://askdb:askdb@${host}:${port}/postgres`,
+              connectionString: this.connectionString(host, port, creds),
               connectionTimeoutMillis: 2000,
             });
             await client.connect();
@@ -117,11 +144,26 @@ export interface SandboxInfo {
   containerId: string;
   port: number;
   running: boolean;
+  credentials: SandboxCredentials;
+}
+
+export function generateSandboxCredentials(): SandboxCredentials {
+  return { user: "askdb", password: randomBytes(24).toString("hex") };
 }
 
 export class SandboxManager {
-  /** Create and start a sandbox container, reusing existing one if present */
-  async create(connectionId: string, dbType = "mongodb"): Promise<SandboxInfo> {
+  /**
+   * Create and start a sandbox container, reusing an existing one if present.
+   * `credentials` MUST be the same on every call for a given connectionId —
+   * Postgres/Mongo only set up the root user on the container's FIRST start
+   * (empty data dir), so passing different credentials on a restart silently
+   * leaves the old password in place.
+   */
+  async create(
+    connectionId: string,
+    dbType = "mongodb",
+    credentials: SandboxCredentials = generateSandboxCredentials(),
+  ): Promise<SandboxInfo> {
     const config = DB_CONFIGS[normalizeDbType(dbType)];
 
     // Check if container already exists
@@ -130,11 +172,11 @@ export class SandboxManager {
       if (!existing.running) {
         const container = docker.getContainer(`${CONTAINER_PREFIX}${connectionId}`);
         await container.start();
-        await config.waitForReady(HOST, existing.port, READY_TIMEOUT_SECONDS);
-        return { ...existing, running: true };
+        await config.waitForReady(HOST, existing.port, credentials, READY_TIMEOUT_SECONDS);
+        return { ...existing, running: true, credentials };
       }
-      await config.waitForReady(HOST, existing.port, READY_TIMEOUT_SECONDS);
-      return existing;
+      await config.waitForReady(HOST, existing.port, credentials, READY_TIMEOUT_SECONDS);
+      return { ...existing, credentials };
     }
 
     // Ensure image exists
@@ -144,9 +186,9 @@ export class SandboxManager {
     const volumeName = `${VOLUME_PREFIX}${connectionId}`;
     const port = await this.findAvailablePort(config.portRangeStart, config.portRangeEnd);
 
-    const envList = config.env
-      ? Object.entries(config.env).map(([k, v]) => `${k}=${v}`)
-      : undefined;
+    const envList = Object.entries(config.buildEnv(credentials)).map(
+      ([k, v]) => `${k}=${v}`,
+    );
 
     const portKey = `${config.internalPort}/tcp`;
     const container = await docker.createContainer({
@@ -161,7 +203,7 @@ export class SandboxManager {
       HostConfig: {
         Binds: [`${volumeName}:${config.dataDir}`],
         PortBindings: {
-          [portKey]: [{ HostPort: String(port) }],
+          [portKey]: [{ HostIp: SANDBOX_BIND_HOST, HostPort: String(port) }],
         },
         RestartPolicy: { Name: "unless-stopped" },
       },
@@ -170,12 +212,13 @@ export class SandboxManager {
 
     await container.start();
 
-    await config.waitForReady(HOST, port, READY_TIMEOUT_SECONDS);
+    await config.waitForReady(HOST, port, credentials, READY_TIMEOUT_SECONDS);
 
     return {
       containerId: container.id,
       port,
       running: true,
+      credentials,
     };
   }
 
@@ -209,7 +252,10 @@ export class SandboxManager {
   }
 
   /** Get sandbox status */
-  async getStatus(connectionId: string, dbType = "mongodb"): Promise<SandboxInfo | null> {
+  async getStatus(
+    connectionId: string,
+    dbType = "mongodb",
+  ): Promise<Omit<SandboxInfo, "credentials"> | null> {
     const containerName = `${CONTAINER_PREFIX}${connectionId}`;
     const config = DB_CONFIGS[normalizeDbType(dbType)];
 
@@ -233,9 +279,18 @@ export class SandboxManager {
   }
 
   /** Get the connection string for a sandbox */
-  getConnectionString(port: number, dbType = "mongodb"): string {
+  getConnectionString(
+    port: number,
+    credentials: SandboxCredentials,
+    dbType = "mongodb",
+  ): string {
     const config = DB_CONFIGS[normalizeDbType(dbType)];
-    return config.connectionString(HOST, port);
+    return config.connectionString(HOST, port, credentials);
+  }
+
+  /** Host used to reach sandbox ports from this process. */
+  getSandboxHost(): string {
+    return HOST;
   }
 
   private async pullImageIfNeeded(image: string) {

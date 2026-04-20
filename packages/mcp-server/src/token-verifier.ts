@@ -21,6 +21,7 @@ export interface AccessibleConnection {
   description: string | null;
   databaseName: string;
   sandboxPort: number;
+  sandboxPassword: string | null;
   dbType: "mongodb" | "postgresql";
 }
 
@@ -51,6 +52,7 @@ function loadAccessibleConnections(userId: string): AccessibleConnection[] {
       description: row.description ?? null,
       databaseName: row.databaseName,
       sandboxPort: row.sandboxPort!,
+      sandboxPassword: row.sandboxPassword ?? null,
       dbType: normalizeDbType(row.dbType),
     }));
 }
