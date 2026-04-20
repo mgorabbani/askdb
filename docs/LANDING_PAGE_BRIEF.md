@@ -313,7 +313,7 @@ Target keywords (primary): *MCP MongoDB*, *MCP Postgres*, *MongoDB MCP server*, 
 - **Framework:** Next.js 15 (App Router) or Astro — either is fine. Static output preferred.
 - **Styling:** Tailwind CSS v4. Match the repo's UI tone (shadcn/ui-adjacent, clean, minimal).
 - **Fonts:** Inter for body, JetBrains Mono (or similar) for code blocks.
-- **Colors:** neutral grayscale base, single accent color (pick one — electric blue `#3B82F6` or MCP purple `#8A2BE2` from the README badges). Dark mode supported.
+- **Colors:** neutral grayscale base, lime-green accent `#A3E635` (primary) drawn from the logo's top layer / sparkle; complementary blues `#3B9EFF` / navy `#1E3A8A` echo the lower logo layers. Dark mode supported.
 - **Performance targets:**
   - Lighthouse performance score ≥ 95 on mobile.
   - LCP < 2.0s.
@@ -350,7 +350,7 @@ Target keywords (primary): *MCP MongoDB*, *MCP Postgres*, *MongoDB MCP server*, 
 
 1. What's the final domain? (`askdb.com`, `askdb.dev`, something else?)
 2. Who provides `demo.mp4` and `demo-poster.jpg`? What's the target file size budget?
-3. Accent color — blue or purple? (Pick one and stick with it.)
+3. Accent color — confirmed lime-green `#A3E635` from the logo.
 4. Is there a separate `/docs` site, or should the landing page link into the GitHub README for everything?
 5. Does PostHog need to be installed, or just a tracking ID added?
 
