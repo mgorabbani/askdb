@@ -41,10 +41,10 @@
         --text: #f4f4f8;
         --text-dim: #9898a6;
         --text-faint: #54545f;
-        --accent: #8a2be2;
-        --accent-dim: #6d22b0;
-        --accent-bright: #b366ff;
-        --accent-glow: rgba(138, 43, 226, 0.28);
+        --accent: #a3e635;
+        --accent-dim: #65a30d;
+        --accent-bright: #bef264;
+        --accent-glow: rgba(163, 230, 53, 0.28);
         --good: #3ee396;
         --bad: #ff5470;
         --amber: #ffd166;
@@ -77,7 +77,7 @@
         inset: 0;
         background:
           radial-gradient(ellipse 80% 50% at 50% -10%, var(--accent-glow), transparent 60%),
-          radial-gradient(ellipse 60% 40% at 85% 10%, rgba(138, 43, 226, 0.08), transparent 70%);
+          radial-gradient(ellipse 60% 40% at 85% 10%, rgba(163, 230, 53, 0.08), transparent 70%);
         pointer-events: none;
         z-index: 0;
       }
@@ -231,7 +231,7 @@
         font-size: 12px;
         color: var(--text-dim);
         margin-bottom: 28px;
-        background: rgba(138, 43, 226, 0.04);
+        background: rgba(163, 230, 53, 0.04);
       }
 
       .eyebrow span { color: var(--accent); }
@@ -263,7 +263,7 @@
         font-family: var(--mono);
         color: var(--accent);
         font-size: 0.95em;
-        background: rgba(138, 43, 226, 0.08);
+        background: rgba(163, 230, 53, 0.08);
         border: 1px solid var(--border);
         padding: 1px 8px;
         border-radius: 5px;
@@ -297,7 +297,7 @@
         border: 1px solid var(--border-strong);
         border-radius: 18px;
         background: var(--bg-elev);
-        box-shadow: 0 40px 80px -30px rgba(138, 43, 226, 0.25);
+        box-shadow: 0 40px 80px -30px rgba(163, 230, 53, 0.25);
         position: relative;
         overflow: hidden;
         display: flex;
@@ -312,8 +312,8 @@
         position: absolute;
         inset: 0;
         background:
-          linear-gradient(180deg, transparent 60%, rgba(138, 43, 226, 0.08) 100%),
-          radial-gradient(circle at 50% 50%, rgba(138, 43, 226, 0.1), transparent 70%);
+          linear-gradient(180deg, transparent 60%, rgba(163, 230, 53, 0.08) 100%),
+          radial-gradient(circle at 50% 50%, rgba(163, 230, 53, 0.1), transparent 70%);
       }
 
       .video-placeholder-icon {
@@ -325,7 +325,7 @@
         align-items: center;
         justify-content: center;
         position: relative;
-        box-shadow: 0 0 0 6px rgba(138, 43, 226, 0.2);
+        box-shadow: 0 0 0 6px rgba(163, 230, 53, 0.2);
       }
 
       .video-placeholder-icon::before {
@@ -445,7 +445,7 @@
         width: 42px;
         height: 42px;
         border-radius: 10px;
-        background: rgba(138, 43, 226, 0.12);
+        background: rgba(163, 230, 53, 0.12);
         border: 1px solid var(--border-strong);
         display: flex;
         align-items: center;
@@ -657,7 +657,7 @@
       .chip:hover { border-color: var(--accent); }
 
       .chip.on {
-        background: rgba(138, 43, 226, 0.18);
+        background: rgba(163, 230, 53, 0.18);
         border-color: var(--accent);
         color: var(--accent-bright);
       }
@@ -945,7 +945,7 @@
         letter-spacing: 0.02em;
         text-transform: uppercase;
         margin-bottom: 14px;
-        background: rgba(138, 43, 226, 0.14);
+        background: rgba(163, 230, 53, 0.14);
         color: var(--accent-bright);
         border: 1px solid var(--accent-dim);
       }
@@ -1002,7 +1002,7 @@
         height: 32px;
         flex-shrink: 0;
         border-radius: 8px;
-        background: rgba(138, 43, 226, 0.15);
+        background: rgba(163, 230, 53, 0.15);
         border: 1px solid var(--accent-dim);
         color: var(--accent-bright);
         display: flex;
@@ -1027,7 +1027,7 @@
         margin-top: 22px;
         padding: 18px 22px;
         border-left: 3px solid var(--accent);
-        background: rgba(138, 43, 226, 0.05);
+        background: rgba(163, 230, 53, 0.05);
         font-size: 14px;
         color: var(--text-dim);
         border-radius: 0 10px 10px 0;
@@ -1177,7 +1177,7 @@
         border: 1px solid var(--border);
         border-radius: 18px;
         background:
-          radial-gradient(ellipse 60% 40% at 50% 50%, rgba(138, 43, 226, 0.08), transparent 70%),
+          radial-gradient(ellipse 60% 40% at 50% 50%, rgba(163, 230, 53, 0.08), transparent 70%),
           var(--bg-elev);
       }
 
@@ -1450,8 +1450,8 @@ return top.map((p, i) => ({
                 <feGaussianBlur stdDeviation="8" result="blur" />
                 <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
-              <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-                <path d="M0,0 L10,5 L0,10 z" fill="#8a2be2" />
+              <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#a3e635" />
               </marker>
               <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
                 <path d="M0,0 L10,5 L0,10 z" fill="#3ee396" />
@@ -1464,8 +1464,8 @@ return top.map((p, i) => ({
             <style>
               .lbl { font: 500 13px 'JetBrains Mono', monospace; fill: #e4e4ec; }
               .lbl-sm { font: 500 11px 'JetBrains Mono', monospace; fill: #9898a6; }
-              .lbl-title { font: 600 12px 'JetBrains Mono', monospace; fill: #b366ff; letter-spacing: .05em; }
-              .lbl-arrow { font: 500 11px 'JetBrains Mono', monospace; fill: #b366ff; }
+              .lbl-title { font: 600 12px 'JetBrains Mono', monospace; fill: #bef264; letter-spacing: .05em; }
+              .lbl-arrow { font: 500 11px 'JetBrains Mono', monospace; fill: #bef264; }
               .lbl-arrow-teal { font: 500 11px 'JetBrains Mono', monospace; fill: #3ee396; }
               .lbl-arrow-amber { font: 500 11px 'JetBrains Mono', monospace; fill: #ffd166; }
             </style>
@@ -1503,17 +1503,17 @@ return top.map((p, i) => ({
 
             <!-- VPS container -->
             <g filter="url(#glow)">
-              <rect x="280" y="190" width="540" height="280" rx="20" fill="url(#vpsFill)" stroke="#8a2be2" stroke-width="1.5" stroke-opacity=".55"/>
+              <rect x="280" y="190" width="540" height="280" rx="20" fill="url(#vpsFill)" stroke="#a3e635" stroke-width="1.5" stroke-opacity=".55"/>
             </g>
             <text x="300" y="220" class="lbl-title">YOUR VPS</text>
 
             <!-- Dashboard card -->
             <g>
-              <rect x="310" y="245" width="220" height="100" rx="12" fill="url(#cardFill)" stroke="#3a2d4d" stroke-width="1"/>
+              <rect x="310" y="245" width="220" height="100" rx="12" fill="url(#cardFill)" stroke="#2d3a2e" stroke-width="1"/>
               <text x="328" y="275" class="lbl">Dashboard + API + MCP</text>
               <g transform="translate(328,290)">
-                <rect x="0" y="0" width="56" height="20" rx="5" fill="rgba(138,43,226,.18)" stroke="#8a2be2" stroke-opacity=".6"/>
-                <text x="28" y="14" text-anchor="middle" style="font: 500 11px 'JetBrains Mono', monospace; fill: #b366ff;">:3100</text>
+                <rect x="0" y="0" width="56" height="20" rx="5" fill="rgba(163,230,53,.18)" stroke="#a3e635" stroke-opacity=".6"/>
+                <text x="28" y="14" text-anchor="middle" style="font: 500 11px 'JetBrains Mono', monospace; fill: #bef264;">:3100</text>
               </g>
               <text x="390" y="304" class="lbl-sm">server process</text>
               <text x="328" y="327" class="lbl-sm" opacity=".8">Express · MCP Streamable HTTP</text>
@@ -1521,7 +1521,7 @@ return top.map((p, i) => ({
 
             <!-- SQLite card -->
             <g>
-              <rect x="310" y="370" width="220" height="76" rx="12" fill="url(#cardFill)" stroke="#3a2d4d" stroke-width="1"/>
+              <rect x="310" y="370" width="220" height="76" rx="12" fill="url(#cardFill)" stroke="#2d3a2e" stroke-width="1"/>
               <text x="328" y="395" class="lbl">SQLite</text>
               <text x="328" y="414" class="lbl-sm">config · audit · api keys</text>
               <text x="328" y="432" class="lbl-sm" opacity=".6">~/askdb-data/askdb.db</text>
@@ -1530,15 +1530,15 @@ return top.map((p, i) => ({
             <!-- Dashboard → SQLite arrow -->
             <path
               d="M 420 345 L 420 368"
-              stroke="#8a2be2"
+              stroke="#a3e635"
               stroke-width="1.5"
               fill="none"
-              marker-end="url(#arrow-purple)"
+              marker-end="url(#arrow-accent)"
             />
 
             <!-- Sandbox card -->
             <g>
-              <rect x="570" y="245" width="230" height="130" rx="12" fill="url(#cardFill)" stroke="#3a2d4d" stroke-width="1"/>
+              <rect x="570" y="245" width="230" height="130" rx="12" fill="url(#cardFill)" stroke="#2d3a2e" stroke-width="1"/>
               <text x="590" y="275" class="lbl">Sandbox</text>
               <text x="590" y="294" class="lbl-sm">isolated Docker container</text>
               <g transform="translate(590,308)">
@@ -1555,10 +1555,10 @@ return top.map((p, i) => ({
             <!-- Dashboard → Sandbox arrow -->
             <path
               d="M 530 295 L 568 295"
-              stroke="#8a2be2"
+              stroke="#a3e635"
               stroke-width="1.5"
               fill="none"
-              marker-end="url(#arrow-purple)"
+              marker-end="url(#arrow-accent)"
             />
 
             <!-- Clients (right) -->
@@ -1607,7 +1607,7 @@ return top.map((p, i) => ({
             <text x="36" y="520" class="lbl-sm" opacity=".6">read-only clone</text>
             <line x1="130" y1="515" x2="158" y2="515" stroke="#3ee396" stroke-width="1.5" stroke-dasharray="4 3"/>
             <text x="180" y="520" class="lbl-sm" opacity=".6">internal</text>
-            <line x1="230" y1="515" x2="258" y2="515" stroke="#8a2be2" stroke-width="1.5"/>
+            <line x1="230" y1="515" x2="258" y2="515" stroke="#a3e635" stroke-width="1.5"/>
             <text x="280" y="520" class="lbl-sm" opacity=".6">mcp</text>
             <line x1="310" y1="515" x2="338" y2="515" stroke="#ffd166" stroke-width="2"/>
           </svg>
