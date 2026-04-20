@@ -38,17 +38,35 @@ if [ ! -f .env ]; then
   ACME_EMAIL=${ASKDB_ACME_EMAIL:-}
   CF_TUNNEL_TOKEN=${ASKDB_CF_TUNNEL_TOKEN:-}
 
+  # When piped (curl | bash), stdin is the script itself — `read` would see EOF.
+  # Reattach stdin to the controlling terminal so prompts work. Skip in true
+  # non-interactive runs where every value comes from ASKDB_* env vars.
+  needs_tty=0
+  if [ -z "$PROFILE" ]; then needs_tty=1; fi
+  if [ "$PROFILE" = "caddy" ] && { [ -z "$DOMAIN" ] || [ -z "$ACME_EMAIL" ]; }; then needs_tty=1; fi
+  if [ "$PROFILE" = "proxyless" ] && [ -z "$DOMAIN" ]; then needs_tty=1; fi
+  if [ "$PROFILE" = "tunnel" ] && { [ -z "$CF_TUNNEL_TOKEN" ] || [ -z "$DOMAIN" ]; }; then needs_tty=1; fi
+  if [ "$needs_tty" = "1" ] && [ ! -t 0 ]; then
+    if [ -r /dev/tty ]; then
+      exec </dev/tty
+    else
+      err "No terminal available for prompts. Re-run non-interactively with ASKDB_PROFILE / ASKDB_DOMAIN / ASKDB_ACME_EMAIL env vars, or download install.sh first and run: sudo bash install.sh"
+    fi
+  fi
+
   if [ -z "$PROFILE" ]; then
     echo ""
     echo "  How would you like to expose askdb?"
     echo "    1) Caddy + automatic HTTPS (needs DNS + ports 80/443)"
     echo "    2) Behind your own reverse proxy (Coolify / Traefik / nginx)"
     echo "    3) Cloudflare Tunnel"
-    read -rp "  Choose [1/2/3, default 1]: " choice
+    echo "    4) Quick test: auto HTTPS via nip.io (uses VPS public IP, no DNS setup)"
+    read -rp "  Choose [1/2/3/4, default 1]: " choice
     case "${choice:-1}" in
       1) PROFILE=caddy ;;
       2) PROFILE=proxyless ;;
       3) PROFILE=tunnel ;;
+      4) PROFILE=quicktest ;;
       *) err "Invalid choice." ;;
     esac
   fi
@@ -58,6 +76,15 @@ if [ ! -f .env ]; then
       [ -n "$DOMAIN" ]     || read -rp "  Domain (e.g. askdb.example.com): " DOMAIN
       [ -n "$ACME_EMAIL" ] || read -rp "  Let's Encrypt email: " ACME_EMAIL
       [ -n "$DOMAIN" ] && [ -n "$ACME_EMAIL" ] || err "Domain and email are required."
+      ;;
+    quicktest)
+      log "Detecting public IP..."
+      IP=$(curl -fsS https://api.ipify.org 2>/dev/null || curl -fsS https://ifconfig.me 2>/dev/null || true)
+      [ -n "$IP" ] || err "Could not detect public IP. Use profile 1 with your own domain."
+      DOMAIN="${IP//./-}.nip.io"
+      ACME_EMAIL=${ACME_EMAIL:-admin@${DOMAIN}}
+      PROFILE=caddy
+      log "Using hostname: $DOMAIN"
       ;;
     proxyless)
       [ -n "$DOMAIN" ] || read -rp "  Hostname your proxy serves [localhost]: " DOMAIN
