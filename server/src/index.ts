@@ -98,8 +98,15 @@ async function main() {
       .filter((s): s is string => !!s)
   );
   app.get("/api/setup-status", async (req, res) => {
+    // Browsers omit the Origin header for same-origin GETs, so Origin alone
+    // isn't enough to recognise the setup/login SPA calling us. Sec-Fetch-Site
+    // is a forbidden request header — the browser sets it based on the real
+    // initiator and strips any JS attempt to forge it — so same-origin there
+    // is a reliable signal.
     const origin = req.get("origin");
-    if (typeof origin !== "string" || !trustedSetupOrigins.has(origin)) {
+    const sameOriginFetch = req.get("sec-fetch-site") === "same-origin";
+    const originAllowed = typeof origin === "string" && trustedSetupOrigins.has(origin);
+    if (!sameOriginFetch && !originAllowed) {
       res.json({ ok: true });
       return;
     }
