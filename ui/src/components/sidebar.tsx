@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router";
 import {
-  Database,
   Key,
   ScrollText,
   LayoutDashboard,
@@ -59,7 +58,7 @@ function SidebarBrand() {
   return (
     <div className="flex h-14 items-center border-b px-4">
       <Link to="/dashboard" className="flex items-center gap-2 font-semibold">
-        <Database className="h-5 w-5" />
+        <img src="/logo.png" alt="askdb" className="h-6 w-6" />
         <span>askdb</span>
       </Link>
     </div>
