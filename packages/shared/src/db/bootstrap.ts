@@ -134,8 +134,10 @@ export function ensureDatabaseSchema(sqlite: SqliteExecDatabase) {
       createdAt INTEGER NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_family
-      ON oauth_refresh_tokens(familyId);
+    -- Note: idx_oauth_refresh_tokens_family is created after addColumnIfMissing
+    -- below, because old DBs may have the table without the familyId column
+    -- (CREATE TABLE IF NOT EXISTS is a no-op once the table exists, so column
+    -- additions must happen via ALTER TABLE first).
 
     CREATE TABLE IF NOT EXISTS schema_tables (
       id TEXT PRIMARY KEY NOT NULL,
@@ -247,6 +249,13 @@ export function ensureDatabaseSchema(sqlite: SqliteExecDatabase) {
     "familyId",
     "TEXT NOT NULL DEFAULT ''"
   );
+
+  // Now that familyId is guaranteed to exist, the index can be created safely
+  // on both fresh and migrated DBs.
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_family
+      ON oauth_refresh_tokens(familyId);
+  `);
 }
 
 // Allowlist of (table, column) pairs we intentionally migrate via ALTER TABLE.
