@@ -41,9 +41,63 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Sign the files install.sh will consume. Pinned fingerprint lives in
+      # install.sh; the private key + passphrase live in repo secrets. Both
+      # are loaded into a scratch GPG homedir that never touches the runner's
+      # default keyring.
+      #
+      # Required secrets:
+      #   ASKDB_RELEASE_GPG_PRIVATE_KEY  — ASCII-armored private key
+      #   ASKDB_RELEASE_GPG_PASSPHRASE   — passphrase for the key (may be empty)
+      - name: Generate SHA256SUMS and sign with release key
+        env:
+          ASKDB_RELEASE_GPG_PRIVATE_KEY: ${{ secrets.ASKDB_RELEASE_GPG_PRIVATE_KEY }}
+          ASKDB_RELEASE_GPG_PASSPHRASE: ${{ secrets.ASKDB_RELEASE_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${ASKDB_RELEASE_GPG_PRIVATE_KEY:-}" ]; then
+            echo "::warning::ASKDB_RELEASE_GPG_PRIVATE_KEY not set — release will NOT include SHA256SUMS.asc."
+            echo "install.sh will refuse to verify and force operators to re-run with ASKDB_SKIP_VERIFY=1."
+            exit 0
+          fi
+
+          # SHA256SUMS uses paths relative to the install dir. Match the layout
+          # install.sh writes to disk: docker-compose.yml at the root and
+          # deploy/Caddyfile inside a subdir, and the install scripts at root.
+          mkdir -p release-artifacts/deploy
+          cp install.sh uninstall.sh docker-compose.yml release-artifacts/
+          cp deploy/Caddyfile release-artifacts/deploy/Caddyfile
+
+          ( cd release-artifacts && \
+            sha256sum install.sh uninstall.sh docker-compose.yml deploy/Caddyfile \
+              > SHA256SUMS )
+
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          printf '%s' "$ASKDB_RELEASE_GPG_PRIVATE_KEY" | gpg --batch --import
+
+          gpg --batch --pinentry-mode loopback \
+              --passphrase "${ASKDB_RELEASE_GPG_PASSPHRASE:-}" \
+              --detach-sign --armor \
+              --output release-artifacts/SHA256SUMS.asc \
+              release-artifacts/SHA256SUMS
+
+          # Sanity: verify our own signature before publishing it.
+          gpg --batch --verify release-artifacts/SHA256SUMS.asc release-artifacts/SHA256SUMS
+
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          # Attach everything from release-artifacts/ so checksummed files and
+          # the files we actually ship are bit-for-bit identical. Fall back to
+          # the root install.sh/uninstall.sh when GPG secrets are missing so
+          # the release still publishes — verification will just be skipped.
           files: |
             install.sh
             uninstall.sh
+            release-artifacts/docker-compose.yml
+            release-artifacts/deploy/Caddyfile
+            release-artifacts/SHA256SUMS
+            release-artifacts/SHA256SUMS.asc
+          fail_on_unmatched_files: false

@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import { assertValidDatabaseName } from "../factory.js";
 
 export interface MongoSyncOptions {
   prodUri: string;
@@ -7,8 +8,17 @@ export interface MongoSyncOptions {
   tmpDir: string;
 }
 
+// Mirror of redactPgErrorOutput for mongo tooling — strip userinfo on
+// mongodb:// URIs and any stray password= that tools might log.
+function redactMongoErrorOutput(raw: string): string {
+  return raw
+    .replace(/(mongodb(?:\+srv)?:\/\/)[^@\s]*@/gi, "$1[redacted]@")
+    .replace(/\b(password)\s*=\s*\S+/gi, "$1=[redacted]");
+}
+
 export async function runMongoDumpRestore(opts: MongoSyncOptions): Promise<void> {
   const { prodUri, sandboxUri, databaseName, tmpDir } = opts;
+  assertValidDatabaseName(databaseName);
   const dumpArgs = [`--uri=${prodUri}`, `--out=${tmpDir}`];
   const restoreArgs = [`--uri=${sandboxUri}`, "--drop", tmpDir];
   if (databaseName) {
@@ -36,12 +46,14 @@ function runCommand(command: string, args: string[]): Promise<void> {
     proc.on("close", (code) => {
       clearTimeout(timeout);
       if (code === 0) resolve();
-      else reject(new Error(`${command} exited with code ${code}: ${stderr.slice(-500)}`));
+      else reject(new Error(
+        `${command} exited with code ${code}: ${redactMongoErrorOutput(stderr).slice(-500)}`
+      ));
     });
 
     proc.on("error", (err) => {
       clearTimeout(timeout);
-      reject(new Error(`${command} failed to start: ${err.message}`));
+      reject(new Error(`${command} failed to start: ${redactMongoErrorOutput(err.message)}`));
     });
   });
 }

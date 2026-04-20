@@ -14,13 +14,26 @@
 set -eEuo pipefail
 
 __askdb_install() {
-  local INSTALL_DIR ASKDB_VERSION REPO_RAW MIN_COMPOSE
+  local INSTALL_DIR ASKDB_VERSION REPO_RAW REPO_RELEASES MIN_COMPOSE
   INSTALL_DIR=${INSTALL_DIR:-/opt/askdb}
   ASKDB_VERSION=${ASKDB_VERSION:-main}
   REPO_RAW=${REPO_RAW:-https://raw.githubusercontent.com/mgorabbani/askdb/${ASKDB_VERSION}}
+  REPO_RELEASES=${REPO_RELEASES:-https://github.com/mgorabbani/askdb/releases/download/${ASKDB_VERSION}}
   MIN_COMPOSE="2.17.0"
 
+  # SHA256SUMS is signed by the release key before being uploaded as a release
+  # asset. Pinning the fingerprint here means an attacker who compromises
+  # GitHub or the delivery network still can't substitute arbitrary install
+  # content without also stealing the private key.
+  #
+  # When rotating: update this value in the same commit that publishes the
+  # new signing key, and bump the release notes so existing deployments know
+  # to re-verify install.sh before running the upgrade path.
+  local ASKDB_RELEASE_KEY_FINGERPRINT
+  ASKDB_RELEASE_KEY_FINGERPRINT=${ASKDB_RELEASE_KEY_FINGERPRINT:-REPLACE_WITH_RELEASE_KEY_FINGERPRINT}
+
   log()  { printf '\033[0;36m[askdb]\033[0m %s\n' "$*"; }
+  warn() { printf '\033[0;33m[askdb]\033[0m %s\n' "$*" >&2; }
   err()  { printf '\033[0;31m[askdb]\033[0m %s\n' "$*" >&2; exit 1; }
 
   trap 'err "Install failed at line $LINENO (exit $?). Check output above."' ERR
@@ -144,10 +157,92 @@ __askdb_install() {
     } > .env
   fi
 
+  # Two-layer integrity: SHA256SUMS lists checksums for every file the
+  # installer ingests, and SHA256SUMS.asc is a detached GPG signature of that
+  # file made with the askdb release key (fingerprint pinned above). We only
+  # attempt verification when:
+  #   * ASKDB_VERSION looks like a tag (vX.Y.Z) — raw/main has no release assets;
+  #   * gpg is available; and
+  #   * ASKDB_SKIP_VERIFY is not set.
+  # A failed verification is fatal. A skipped verification emits a loud
+  # warning so operators don't accidentally roll it out on main in prod.
+  local VERIFY_ENABLED=0
+  local VERIFY_DIR=""
+  if [ "${ASKDB_SKIP_VERIFY:-0}" = "1" ]; then
+    warn "ASKDB_SKIP_VERIFY=1 — skipping SHA256SUMS + GPG verification."
+  elif ! [[ "$ASKDB_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    warn "ASKDB_VERSION=$ASKDB_VERSION is not a pinned release tag; skipping integrity verification."
+    warn "For production, install with: sudo ASKDB_VERSION=v1.2.3 bash install.sh"
+  elif [ "$ASKDB_RELEASE_KEY_FINGERPRINT" = "REPLACE_WITH_RELEASE_KEY_FINGERPRINT" ]; then
+    warn "Release key fingerprint not pinned in this install.sh — skipping GPG verification."
+  elif ! command -v gpg >/dev/null 2>&1; then
+    warn "gpg not installed; skipping signature verification. Install with: apt-get install gnupg"
+  else
+    VERIFY_ENABLED=1
+    VERIFY_DIR=$(mktemp -d)
+    # Clean up the scratch dir on any exit path.
+    # shellcheck disable=SC2064
+    trap "rm -rf '$VERIFY_DIR'" EXIT
+
+    log "Fetching SHA256SUMS + signature from release $ASKDB_VERSION..."
+    if ! curl -fsSL "$REPO_RELEASES/SHA256SUMS"     -o "$VERIFY_DIR/SHA256SUMS" \
+      || ! curl -fsSL "$REPO_RELEASES/SHA256SUMS.asc" -o "$VERIFY_DIR/SHA256SUMS.asc"; then
+      err "Could not fetch SHA256SUMS[.asc] from $REPO_RELEASES. Re-run with ASKDB_SKIP_VERIFY=1 to bypass, but understand the risk."
+    fi
+
+    # Fresh, isolated GPG homedir so we don't pollute the caller's keyring,
+    # and we can't accidentally trust keys that already live there.
+    export GNUPGHOME="$VERIFY_DIR/gnupg"
+    mkdir -p "$GNUPGHOME"
+    chmod 700 "$GNUPGHOME"
+
+    log "Fetching release pubkey for fingerprint ${ASKDB_RELEASE_KEY_FINGERPRINT}..."
+    if ! gpg --batch --keyserver hkps://keys.openpgp.org \
+            --recv-keys "$ASKDB_RELEASE_KEY_FINGERPRINT" >/dev/null 2>&1; then
+      err "Failed to fetch release pubkey. Check network to keys.openpgp.org."
+    fi
+
+    # Re-assert the fingerprint actually matches what we received — keyservers
+    # are not trusted and may return whatever they like for a given keyid.
+    if ! gpg --batch --with-colons --list-keys "$ASKDB_RELEASE_KEY_FINGERPRINT" \
+           | awk -F: '$1=="fpr"{print $10}' \
+           | grep -Fqx "$ASKDB_RELEASE_KEY_FINGERPRINT"; then
+      err "Retrieved key fingerprint does not match expected $ASKDB_RELEASE_KEY_FINGERPRINT. Aborting."
+    fi
+
+    if ! gpg --batch --status-fd 1 --verify \
+           "$VERIFY_DIR/SHA256SUMS.asc" "$VERIFY_DIR/SHA256SUMS" \
+           | grep -Eq '^\[GNUPG:\] (GOODSIG|VALIDSIG) '; then
+      err "SHA256SUMS signature check failed. Aborting install."
+    fi
+    log "SHA256SUMS signature verified against pinned fingerprint."
+  fi
+
   log "Fetching docker-compose.yml and Caddyfile ($ASKDB_VERSION)..."
-  curl -fsSL "$REPO_RAW/docker-compose.yml" -o docker-compose.yml
+  # Release assets carry the authoritative copies of files we need to verify;
+  # fall back to raw.githubusercontent.com for main (unpinned) installs.
+  local COMPOSE_SRC CADDY_SRC
+  if [ "$VERIFY_ENABLED" = "1" ]; then
+    COMPOSE_SRC="$REPO_RELEASES/docker-compose.yml"
+    CADDY_SRC="$REPO_RELEASES/Caddyfile"
+  else
+    COMPOSE_SRC="$REPO_RAW/docker-compose.yml"
+    CADDY_SRC="$REPO_RAW/deploy/Caddyfile"
+  fi
+  curl -fsSL "$COMPOSE_SRC" -o docker-compose.yml
   mkdir -p deploy
-  curl -fsSL "$REPO_RAW/deploy/Caddyfile" -o deploy/Caddyfile
+  curl -fsSL "$CADDY_SRC" -o deploy/Caddyfile
+
+  if [ "$VERIFY_ENABLED" = "1" ]; then
+    # sha256sum -c reads lines of the form "HASH␠␠FILE". Our SHA256SUMS uses
+    # relative filenames that match what we wrote to disk.
+    (
+      cd "$INSTALL_DIR"
+      grep -E '  (docker-compose\.yml|deploy/Caddyfile)$' "$VERIFY_DIR/SHA256SUMS" \
+        | sha256sum --strict --check --quiet
+    ) || err "Checksum verification failed for docker-compose.yml and/or deploy/Caddyfile."
+    log "Checksums verified for installed files."
+  fi
 
   # shellcheck disable=SC1091
   . ./.env

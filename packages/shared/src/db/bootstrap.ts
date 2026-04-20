@@ -130,8 +130,12 @@ export function ensureDatabaseSchema(sqlite: SqliteExecDatabase) {
       resource TEXT NOT NULL,
       expiresAt INTEGER NOT NULL,
       revokedAt INTEGER,
+      familyId TEXT NOT NULL DEFAULT '',
       createdAt INTEGER NOT NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_family
+      ON oauth_refresh_tokens(familyId);
 
     CREATE TABLE IF NOT EXISTS schema_tables (
       id TEXT PRIMARY KEY NOT NULL,
@@ -213,13 +217,46 @@ export function ensureDatabaseSchema(sqlite: SqliteExecDatabase) {
       connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
       apiKeyId TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS auth_audit_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      event TEXT NOT NULL,
+      outcome TEXT NOT NULL DEFAULT 'info',
+      userId TEXT,
+      clientId TEXT,
+      ipAddress TEXT,
+      userAgent TEXT,
+      details TEXT,
+      createdAt INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auth_audit_logs_createdAt
+      ON auth_audit_logs(createdAt);
+    CREATE INDEX IF NOT EXISTS idx_auth_audit_logs_event
+      ON auth_audit_logs(event);
   `);
 
   // Idempotent column additions for pre-existing DBs. SQLite's CREATE TABLE IF
   // NOT EXISTS does not add new columns to tables that already exist, so any
   // column introduced after the initial schema must be migrated here.
   addColumnIfMissing(sqlite, "connections", "description", "TEXT");
+  addColumnIfMissing(sqlite, "connections", "sandboxPassword", "TEXT");
+  addColumnIfMissing(
+    sqlite,
+    "oauth_refresh_tokens",
+    "familyId",
+    "TEXT NOT NULL DEFAULT ''"
+  );
 }
+
+// Allowlist of (table, column) pairs we intentionally migrate via ALTER TABLE.
+// Prevents the interpolated ALTER TABLE from becoming an injection vector if
+// this helper is ever called with caller-controlled strings.
+const ALLOWED_COLUMN_MIGRATIONS = new Set([
+  "connections:description",
+  "connections:sandboxPassword",
+  "oauth_refresh_tokens:familyId",
+]);
 
 function addColumnIfMissing(
   sqlite: SqliteExecDatabase,
@@ -228,9 +265,15 @@ function addColumnIfMissing(
   definition: string
 ) {
   if (!sqlite.prepare) return;
-  const cols = sqlite.prepare(`PRAGMA table_info(${table})`).all() as {
+  if (!ALLOWED_COLUMN_MIGRATIONS.has(`${table}:${column}`)) {
+    throw new Error(`addColumnIfMissing: (${table}, ${column}) not in allowlist`);
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(column)) {
+    throw new Error(`addColumnIfMissing: invalid identifier ${table}.${column}`);
+  }
+  const cols = sqlite.prepare(`PRAGMA table_info("${table}")`).all() as {
     name: string;
   }[];
   if (cols.some((c) => c.name === column)) return;
-  sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  sqlite.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${definition}`);
 }

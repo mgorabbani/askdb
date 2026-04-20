@@ -28,6 +28,7 @@ import {
   generateSchemaOverviewMarkdown,
   invalidateGuideCache,
   saveAgentInsight,
+  resolveSandboxCredentials,
 } from "@askdb/shared";
 
 import {
@@ -69,10 +70,15 @@ const {
 
 const mongoClients = new Map<number, MongoClient>();
 
-async function getMongoDb(port: number): Promise<MongoDb> {
+async function getMongoDb(conn: {
+  sandboxPort: number;
+  sandboxPassword: string | null;
+}): Promise<MongoDb> {
+  const port = conn.sandboxPort;
   let client = mongoClients.get(port);
   if (!client) {
-    const uri = `mongodb://${MONGO_HOST}:${port}`;
+    const creds = resolveSandboxCredentials(conn.sandboxPassword);
+    const uri = `mongodb://${encodeURIComponent(creds.user)}:${encodeURIComponent(creds.password)}@${MONGO_HOST}:${port}/?authSource=admin`;
     client = new MongoClient(uri, {
       serverSelectionTimeoutMS: 5000,
       connectTimeoutMS: 5000,
@@ -95,18 +101,23 @@ async function getMongoDb(port: number): Promise<MongoDb> {
 const pgClients = new Map<string, PgClient>();
 
 async function getPgClient(
-  sandboxPort: number,
+  conn: {
+    sandboxPort: number;
+    sandboxPassword: string | null;
+  },
   databaseName: string
 ): Promise<PgClient> {
+  const sandboxPort = conn.sandboxPort;
   const key = `${sandboxPort}:${databaseName}`;
   let client = pgClients.get(key);
   if (client) return client;
 
+  const creds = resolveSandboxCredentials(conn.sandboxPassword);
   client = new PgClient({
     host: MONGO_HOST,
     port: sandboxPort,
-    user: "askdb",
-    password: "askdb",
+    user: creds.user,
+    password: creds.password,
     database: databaseName,
     connectionTimeoutMillis: 5000,
     statement_timeout: 10_000,
@@ -529,7 +540,7 @@ function createMcpServer(auth: AuthContext): McpServer {
 
       switch (conn.dbType) {
         case "mongodb": {
-          const mongoDb = await getMongoDb(conn.sandboxPort);
+          const mongoDb = await getMongoDb(conn);
           const coll = mongoDb.collection(collection);
 
           switch (operation) {
@@ -605,7 +616,7 @@ function createMcpServer(auth: AuthContext): McpServer {
             );
           }
 
-          const pg = await getPgClient(conn.sandboxPort, conn.databaseName);
+          const pg = await getPgClient(conn, conn.databaseName);
           const qualified = resolvePgCollection(collection);
 
           switch (operation) {
@@ -1293,7 +1304,7 @@ function createMcpServer(auth: AuthContext): McpServer {
           let docs: Record<string, unknown>[];
           switch (conn.dbType) {
             case "mongodb": {
-              const mongoDb = await getMongoDb(conn.sandboxPort);
+              const mongoDb = await getMongoDb(conn);
               const coll = mongoDb.collection(collection);
               docs = (await coll
                 .aggregate([{ $sample: { size: sampleSize } }], { maxTimeMS: 10_000 })
@@ -1301,7 +1312,7 @@ function createMcpServer(auth: AuthContext): McpServer {
               break;
             }
             case "postgresql": {
-              const pg = await getPgClient(conn.sandboxPort, conn.databaseName);
+              const pg = await getPgClient(conn, conn.databaseName);
               const qualified = resolvePgCollection(collection);
               const res = await pg.query<Record<string, unknown>>(
                 `SELECT * FROM ${qualified} ORDER BY RANDOM() LIMIT ${sampleSize}`
@@ -1590,6 +1601,8 @@ export function createMcpRouter(): {
           typeof conn.description === "string" ? conn.description : null,
         databaseName: conn.databaseName,
         sandboxPort: conn.sandboxPort,
+        sandboxPassword:
+          typeof conn.sandboxPassword === "string" ? conn.sandboxPassword : null,
         dbType: normalizeDbType(conn.dbType),
       });
     }

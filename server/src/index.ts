@@ -15,6 +15,7 @@ if (process.env.DATABASE_PATH && !path.isAbsolute(process.env.DATABASE_PATH)) {
 }
 
 const { default: express } = await import("express");
+const { default: helmet } = await import("helmet");
 const { authRouter } = await import("./routes/auth.js");
 const { isSignupLocked } = await import("./lib/auth.js");
 const { createMcpOAuthRouter, getMcpPublicUrl } = await import("./lib/mcp-oauth.js");
@@ -47,6 +48,39 @@ async function main() {
   // forge X-Forwarded-For. See commit 0970e24 for prior art.
   app.set("trust proxy", ["127.0.0.1/32", "::1/128", "172.16.0.0/12", "10.0.0.0/8"]);
 
+  // Security headers. CSP is tight by default — allows self + inline styles
+  // (Vite injects them in dev, and a few built-up components use inline
+  // style attrs). Connect/image sources stay self-only. HSTS is 2 years with
+  // preload; only takes effect when served over https behind the TLS proxy.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          "default-src": ["'self'"],
+          "script-src": ["'self'"],
+          "style-src": ["'self'", "'unsafe-inline'"],
+          "img-src": ["'self'", "data:", "blob:"],
+          "font-src": ["'self'", "data:"],
+          "connect-src": ["'self'"],
+          "frame-ancestors": ["'none'"],
+          "form-action": ["'self'"],
+          "base-uri": ["'self'"],
+          "object-src": ["'none'"],
+        },
+      },
+      strictTransportSecurity: {
+        maxAge: 63072000, // 2 years
+        includeSubDomains: true,
+        preload: true,
+      },
+      referrerPolicy: { policy: "no-referrer" },
+      crossOriginOpenerPolicy: { policy: "same-origin" },
+      crossOriginResourcePolicy: { policy: "same-origin" },
+      // We don't host third-party iframes; nosniff/ieNoOpen/xssFilter all default on.
+    })
+  );
+
   // Parse cookies — needed for CSRF double-submit on consent form.
   // Does not consume request body, so order relative to better-auth is fine.
   app.use(cookieParser());
@@ -61,6 +95,20 @@ async function main() {
   app.use("/token", makeOAuthLimiter());
   app.use("/register", makeOAuthLimiter());
   app.use("/revoke", makeOAuthLimiter());
+
+  // Stricter budget on the paths that validate user secrets. 5 attempts per
+  // 15-minute window per IP, and successful calls don't count — so a user
+  // who gets their password right mid-spray isn't locked out by the attacker.
+  // standardHeaders exposes RateLimit-* so well-behaved clients can back off.
+  const authCredentialLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 5,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+  });
+  app.use("/api/auth/sign-in", authCredentialLimiter);
+  app.use("/api/auth/sign-up", authCredentialLimiter);
 
   // Body parsing — note better-auth needs the raw stream, so mount auth BEFORE json()
   app.use("/api/auth", authRouter);

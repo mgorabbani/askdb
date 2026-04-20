@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import { Client } from "pg";
+import { assertValidDatabaseName } from "../factory.js";
 
 export interface PgSyncOptions {
   prodUri: string;
@@ -8,12 +9,24 @@ export interface PgSyncOptions {
   tmpDir: string;
 }
 
+// pg_dump/psql stderr can echo connection URIs that still include credentials
+// when failures bubble up from libpq. Before surfacing stderr to users (and to
+// the DB's sync_error column), strip URI userinfo and key=val pairs that
+// commonly carry secrets.
+function redactPgErrorOutput(raw: string): string {
+  return raw
+    .replace(/(postgres(?:ql)?:\/\/)[^@\s]*@/gi, "$1[redacted]@")
+    .replace(/\b(password|PGPASSWORD)\s*=\s*\S+/gi, "$1=[redacted]");
+}
+
 /**
  * Dump the prod PostgreSQL database with pg_dump and load it into the sandbox
  * with psql. Uses --clean --if-exists so repeated syncs replace prior data.
  */
 export async function runPostgresDumpRestore(opts: PgSyncOptions): Promise<void> {
   const { prodUri, sandboxUri, databaseName, tmpDir } = opts;
+
+  assertValidDatabaseName(databaseName);
 
   const dumpFile = `${tmpDir}/dump.sql`;
 
@@ -54,6 +67,7 @@ export async function runPostgresDumpRestore(opts: PgSyncOptions): Promise<void>
 
 async function ensureSandboxDatabase(sandboxUri: string, databaseName: string) {
   if (!databaseName) return;
+  assertValidDatabaseName(databaseName);
   const client = new Client({
     connectionString: sandboxUri,
     database: "postgres",
@@ -67,7 +81,8 @@ async function ensureSandboxDatabase(sandboxUri: string, databaseName: string) {
     );
     if (rows.length > 0) return;
     // CREATE DATABASE does not accept parameters, so we quote-escape the name.
-    await client.query(`CREATE DATABASE "${databaseName.replace(/"/g, '""')}"`);
+    // assertValidDatabaseName has already rejected embedded quotes/backslashes.
+    await client.query(`CREATE DATABASE "${databaseName}"`);
   } finally {
     await client.end().catch(() => {});
   }
@@ -75,6 +90,7 @@ async function ensureSandboxDatabase(sandboxUri: string, databaseName: string) {
 
 function injectDatabase(uri: string, databaseName: string): string {
   if (!databaseName) return uri;
+  assertValidDatabaseName(databaseName);
   try {
     const url = new URL(uri);
     url.pathname = "/" + encodeURIComponent(databaseName);
@@ -104,12 +120,14 @@ function runCommand(command: string, args: string[], env?: Record<string, string
     proc.on("close", (code) => {
       clearTimeout(timeout);
       if (code === 0) resolve();
-      else reject(new Error(`${command} exited with code ${code}: ${stderr.slice(-500)}`));
+      else reject(new Error(
+        `${command} exited with code ${code}: ${redactPgErrorOutput(stderr).slice(-500)}`
+      ));
     });
 
     proc.on("error", (err) => {
       clearTimeout(timeout);
-      reject(new Error(`${command} failed to start: ${err.message}`));
+      reject(new Error(`${command} failed to start: ${redactPgErrorOutput(err.message)}`));
     });
   });
 }

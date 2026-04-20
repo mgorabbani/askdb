@@ -26,7 +26,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 
-import { ensureDatabaseSchema } from "@askdb/shared";
+import { ensureDatabaseSchema, encrypt } from "@askdb/shared";
 import { generateApiKey } from "@askdb/shared";
 
 // ── Constants ───────────────────────────────────────────────────────
@@ -36,6 +36,9 @@ const SERVER_PORT = 3099;
 const CONTAINER_NAME = "askdb-codemode-e2e";
 const MONGO_IMAGE = "mongo:7";
 const TEST_DB_NAME = "appdb";
+const MONGO_USER = "askdb";
+const MONGO_PASSWORD = "e2e-test-password-not-a-secret";
+const MONGO_URI = `mongodb://${encodeURIComponent(MONGO_USER)}:${encodeURIComponent(MONGO_PASSWORD)}@localhost:${MONGO_PORT}/?authSource=admin`;
 
 // ── Tiny logger ─────────────────────────────────────────────────────
 
@@ -58,14 +61,17 @@ async function dockerStop(): Promise<void> {
 async function dockerStartMongo(): Promise<void> {
   log(`starting ${MONGO_IMAGE} on :${MONGO_PORT}`);
   execSync(
-    `docker run -d --rm --name ${CONTAINER_NAME} -p ${MONGO_PORT}:27017 ${MONGO_IMAGE}`,
+    `docker run -d --rm --name ${CONTAINER_NAME} -p ${MONGO_PORT}:27017 ` +
+      `-e MONGO_INITDB_ROOT_USERNAME=${MONGO_USER} ` +
+      `-e MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD} ` +
+      `${MONGO_IMAGE}`,
     { stdio: "ignore" }
   );
 
   // Wait for ping
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    const client = new MongoClient(`mongodb://localhost:${MONGO_PORT}`, {
+    const client = new MongoClient(MONGO_URI, {
       serverSelectionTimeoutMS: 1000,
     });
     try {
@@ -83,7 +89,7 @@ async function dockerStartMongo(): Promise<void> {
 }
 
 async function seedMongo(): Promise<{ userIds: string[] }> {
-  const client = new MongoClient(`mongodb://localhost:${MONGO_PORT}`);
+  const client = new MongoClient(MONGO_URI);
   await client.connect();
   const db = client.db(TEST_DB_NAME);
 
@@ -142,11 +148,13 @@ function createSchema(sqlite: Database.Database): void {
     CREATE TABLE connections (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
+      description TEXT,
       dbType TEXT NOT NULL DEFAULT 'mongodb',
       databaseName TEXT NOT NULL DEFAULT '',
       connectionString TEXT NOT NULL,
       sandboxContainerId TEXT,
       sandboxPort INTEGER,
+      sandboxPassword TEXT,
       syncStatus TEXT NOT NULL DEFAULT 'IDLE',
       syncError TEXT,
       lastSyncAt INTEGER,
@@ -256,11 +264,11 @@ function seedSqlite(): SeedSqliteResult {
   sqlite
     .prepare(
       `INSERT INTO connections
-        (id, name, dbType, databaseName, connectionString, sandboxPort,
+        (id, name, dbType, databaseName, connectionString, sandboxPort, sandboxPassword,
          syncStatus, createdAt, updatedAt, userId)
-       VALUES (?, 'e2e', 'mongodb', ?, 'unused-encrypted-blob', ?, 'READY', ?, ?, ?)`
+       VALUES (?, 'e2e', 'mongodb', ?, 'unused-encrypted-blob', ?, ?, 'READY', ?, ?, ?)`
     )
-    .run(connectionId, TEST_DB_NAME, MONGO_PORT, now, now, userId);
+    .run(connectionId, TEST_DB_NAME, MONGO_PORT, encrypt(MONGO_PASSWORD), now, now, userId);
 
   // api key
   const apiKeyId = "ak_e2e";
