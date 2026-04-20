@@ -22,19 +22,32 @@ pnpm dev
 ## Project layout
 
 ```
-server/                 Main Express app (port 3100). Serves UI, /api/*,
-                        /api/auth/*, OAuth endpoints, and /mcp.
-packages/mcp-server/    MCP router factory + tool implementations. Library
-                        only — mounted into server/ at /mcp.
-packages/shared/        DB schema (drizzle + SQLite), better-auth wiring,
-                        DCR OAuth provider, sandbox Docker manager,
-                        shared helpers (urls, crypto, PII).
-ui/                     React SPA built with Vite.
-cli/                    CLI tool.
-docker/                 Container entrypoint (auto-secrets generation).
-deploy/                 Caddyfile for the bundled reverse proxy.
-docs/plans/             Implementation plans for past/current work.
+askdb/
+├── server/              # @askdb/server — Express API + UI host + MCP endpoint on :3100
+├── ui/                  # @askdb/ui — Vite React SPA
+├── cli/                 # @askdb/cli — askdb CLI
+├── packages/
+│   ├── shared/          # @askdb/shared — DB schema, adapters, crypto, sandbox Docker manager
+│   └── mcp-server/      # @askdb/mcp-server — MCP router factory + tool implementations
+├── scripts/
+│   └── dev-runner.ts    # Zero-dep orchestrator: spawns server + UI watcher
+├── docker/
+│   └── entrypoint.sh    # Runtime entrypoint (single server process under tini)
+├── deploy/              # Caddyfile for the bundled reverse proxy
+├── Dockerfile           # Multi-stage: deps → build → runtime
+├── docker-compose.yml   # One-command self-host
+└── data/                # SQLite database (gitignored, mounted as volume in prod)
 ```
+
+## Tech stack
+
+- [Vite](https://vite.dev) + [React](https://react.dev) — Dashboard UI
+- [Express](https://expressjs.com) — API server
+- [Drizzle ORM](https://orm.drizzle.team) — Database (SQLite)
+- [Better Auth](https://better-auth.com) — Authentication
+- [shadcn/ui](https://ui.shadcn.com) — UI components
+- [MCP SDK](https://github.com/modelcontextprotocol/sdk) — AI agent protocol
+- [dockerode](https://github.com/apocas/dockerode) — Container management
 
 ## Conventions
 
@@ -71,14 +84,24 @@ Tool handlers live in `packages/mcp-server/src/index.ts`. A new tool must:
 3. Strip hidden fields/collections based on the visibility rules in `schemaTables` / `schemaFields`.
 4. Write an `auditLogs` row describing the call.
 
-## Running checks
+## Development commands
 
 ```bash
-pnpm typecheck                          # all workspaces
-pnpm build                              # full build (tsc + vite)
-pnpm --filter @askdb/mcp-server e2e     # code-mode e2e (in-process)
-pnpm --filter @askdb/mcp-server test    # unit tests
+pnpm dev              # Full dev (API + UI + file watching)
+pnpm build            # Build all packages
+pnpm typecheck        # Type check all packages
+pnpm db:generate      # Generate DB migration
+pnpm db:migrate       # Apply migrations
 ```
+
+## Running tests
+
+```bash
+pnpm --filter @askdb/mcp-server test    # Unit tests (sandbox isolation, bridge, runtime)
+pnpm --filter @askdb/mcp-server e2e     # End-to-end test against real MongoDB (requires Docker)
+```
+
+The `e2e` script boots a throwaway MongoDB container, seeds two collections, spins up a temporary AskDB MCP server pointed at a temp SQLite DB, and walks through the full Streamable HTTP transport with the official MCP client. It asserts that hidden fields are stripped before data crosses into the Code Mode sandbox.
 
 ## Proposing changes
 
