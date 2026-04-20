@@ -125,7 +125,19 @@ The first time you open `https://<your-domain>`, the dashboard redirects you to 
 
 - **Caddy (default):** auto-provisioned HTTPS. Requires a domain with A record.
 - **Proxyless:** you run your own reverse proxy (Coolify, Traefik, nginx). AskDB binds `127.0.0.1:3100`.
-- **Cloudflare Tunnel:** no open ports. Paste your tunnel token when prompted.
+- **Quick test (nip.io):** zero setup — the installer detects your VPS public IP and issues a real Let's Encrypt cert for `<ip>.nip.io`. No DNS, no domain. Ideal for trial runs. Ports 80/443 still required.
+- **Cloudflare Tunnel:** no open ports, no public IP needed. See below.
+
+#### Cloudflare Tunnel in 90 seconds
+
+If you already have a domain on Cloudflare (free plan works):
+
+1. Open [Cloudflare dashboard](https://dash.cloudflare.com) → click the **Ask AI** button in the top bar.
+2. Prompt it: *"Create a new Cloudflare Tunnel named askdb, route the hostname `askdb.example.com` to `http://askdb:3100`, and give me the connector token."* Replace `askdb.example.com` with the subdomain you want.
+3. Copy the token it returns (long `eyJ...` string).
+4. Run the installer, pick option **3) Cloudflare Tunnel**, paste the token, enter the same subdomain. The VPS handles Docker, routing, and certs — Cloudflare handles TLS and DNS automatically.
+
+No firewall changes. No A records. The subdomain starts serving over HTTPS within a minute.
 
 ### Upgrade
 
