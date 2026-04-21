@@ -834,6 +834,11 @@ function createMcpServer(auth: AuthContext): McpServer {
     })
   );
 
+  // MCP Apps hosts advertise support via capabilities.extensions["io.modelcontextprotocol/ui"]
+  // with mimeTypes ["text/html;profile=mcp-app"] (SEP-1865 / spec 2026-01-26).
+  // Plain "text/html" is rejected by Claude's MCP Apps handler, so we must
+  // return the profile-qualified mimetype both in the resource descriptor and
+  // the resource contents.
   server.registerResource(
     "result-viewer",
     RESULT_VIEWER_URI,
@@ -841,14 +846,14 @@ function createMcpServer(auth: AuthContext): McpServer {
       title: "Result Viewer",
       description:
         "MCP Apps UI that renders find/aggregate/sample-documents results as an interactive table. Hosts without MCP Apps support ignore this resource.",
-      mimeType: "text/html",
+      mimeType: "text/html;profile=mcp-app",
       _meta: resultViewerResourceMeta(),
     },
     async () => ({
       contents: [
         {
           uri: RESULT_VIEWER_URI,
-          mimeType: "text/html",
+          mimeType: "text/html;profile=mcp-app",
           text: resultViewerHtml(),
         },
       ],
