@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { config as loadEnv } from "dotenv";
 import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
+import { CSP_DIRECTIVES } from "./lib/csp.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
@@ -56,18 +57,7 @@ async function main() {
     helmet({
       contentSecurityPolicy: {
         useDefaults: true,
-        directives: {
-          "default-src": ["'self'"],
-          "script-src": ["'self'"],
-          "style-src": ["'self'", "'unsafe-inline'"],
-          "img-src": ["'self'", "data:", "blob:"],
-          "font-src": ["'self'", "data:"],
-          "connect-src": ["'self'"],
-          "frame-ancestors": ["'none'"],
-          "form-action": ["'self'"],
-          "base-uri": ["'self'"],
-          "object-src": ["'none'"],
-        },
+        directives: CSP_DIRECTIVES,
       },
       strictTransportSecurity: {
         maxAge: 63072000, // 2 years

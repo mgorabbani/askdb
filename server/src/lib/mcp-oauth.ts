@@ -31,6 +31,7 @@ import {
   type OAuthClientRecord,
 } from "@askdb/shared";
 import { getSession } from "./session.js";
+import { cspWithFormActionOrigins } from "./csp.js";
 
 export { getOAuthIssuerUrl, getMcpPublicUrl };
 
@@ -103,6 +104,17 @@ export function createMcpOAuthRouter(): RequestHandler {
           secure: isHttps,
           maxAge: 10 * 60_000, // 10 minutes
         });
+        // Override the global 'form-action self' CSP so the consent form can
+        // submit through the 302 redirect chain that lands on the client's
+        // registered redirect_uri (e.g. https://claude.ai/api/mcp/auth_callback).
+        // The SDK validates params.redirectUri against client.redirect_uris
+        // before calling authorize() (see SDK authorize handler), so deriving
+        // the allowed origin from it is safe.
+        const redirectOrigin = new URL(params.redirectUri).origin;
+        res.setHeader(
+          "Content-Security-Policy",
+          cspWithFormActionOrigins([redirectOrigin])
+        );
         res.status(200).type("html").send(
           renderConsentPage({
             client,
