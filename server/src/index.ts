@@ -112,6 +112,20 @@ async function main() {
   );
   const { router: mcpRouter, onShutdown: onMcpShutdown } = createMcpRouter();
 
+  // Pre-bearer logger. Emits before requireBearerAuth so we see every /mcp
+  // attempt even when auth rejects — useful for diagnosing client-side issues
+  // that manifest as "no request ever reached the router."
+  app.use("/mcp", (req, _res, next) => {
+    const auth = req.headers.authorization;
+    const authState = typeof auth === "string"
+      ? `bearer_suffix=…${auth.slice(-8)}`
+      : "no_auth_header";
+    console.log(
+      `[mcp-pre-bearer] ${req.method} ${req.originalUrl} ${authState} accept=${req.headers.accept ?? "-"}`
+    );
+    next();
+  });
+
   app.use(
     "/mcp",
     requireBearerAuth({ verifier: tokenVerifier, resourceMetadataUrl: resourceMetadataUrl.href }),
