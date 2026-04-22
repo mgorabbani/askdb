@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="AskDB" height="48" align="middle" /><strong>AskDB</strong> &mdash; Give AI agents safe access to your database.
+  <img src="docs/site/assets/logo.png" alt="AskDB" height="48" align="middle" /><strong>AskDB</strong> &mdash; Give AI agents safe access to your database.
 </p>
 
 <p align="center">
@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/cover-github.png" alt="AskDB — self-hosted bridge between your database and any MCP-speaking AI agent" width="50%" />
+  <img src="docs/site/assets/cover-github.png" alt="AskDB — self-hosted bridge between your database and any MCP-speaking AI agent" width="50%" />
 </p>
 
 <p align="center">
