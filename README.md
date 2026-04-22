@@ -11,6 +11,10 @@
 </p>
 
 <p align="center">
+  <video src="https://github.com/mgorabbani/askdb/raw/main/ui/public/askdb-promo.mp4" controls width="70%"></video>
+</p>
+
+<p align="center">
   <a href="https://github.com/mgorabbani/askdb/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="AGPL v3 License" /></a>
   <a href="https://github.com/mgorabbani/askdb/stargazers"><img src="https://img.shields.io/github/stars/mgorabbani/askdb?style=flat" alt="Stars" /></a>
   <a href="#try-it-locally-with-docker"><img src="https://img.shields.io/badge/docker--compose-ready-2496ED.svg?logo=docker&logoColor=white" alt="Docker Compose" /></a>
