@@ -1,0 +1,56 @@
+# AskDB
+
+> AskDB is a self-hosted, open-source MCP (Model Context Protocol) server that gives AI agents — Claude, ChatGPT, Cursor, Gemini, Claude Code — safe, read-only access to MongoDB and PostgreSQL databases. It solves the "connect an AI to production data" problem by sandboxing a copy of the database, enforcing field-level visibility, auto-detecting PII, and exposing a single `/mcp` endpoint behind OAuth 2.1 or a static API key.
+
+License: AGPLv3
+Source: https://github.com/mgorabbani/askdb
+Homepage: https://askdb.dev
+Install (VPS): `curl -fsSL https://raw.githubusercontent.com/mgorabbani/askdb/main/install.sh | sudo bash`
+
+## What AskDB is
+
+- An MCP server spoken by any MCP-compatible AI client (Claude desktop, Claude Code, ChatGPT, Cursor, Gemini).
+- A sandbox layer: reads your production DB once via `mongodump` / `pg_dump`, then all agent queries run against a local copy. Production is never written to.
+- A visibility gate: per-connection, per-collection, per-field toggles. Hidden fields never appear in results, schema output, or samples.
+- A PII detector: flags fields like `email`, `phone`, `ssn`, `address` for one-click hiding.
+- A multi-DB workspace: agents see a `databases://overview` resource and pass a `connectionId` into each query tool.
+
+## Key capabilities
+
+- **Sandbox isolation** — production DB is read-only; agents query the sandbox copy.
+- **Field-level control** — toggle fields on/off; hidden fields are removed server-side, not masked.
+- **PII auto-detection** — heuristics flag likely-sensitive fields for review.
+- **Two engines, one surface** — MongoDB and PostgreSQL, same tool shape.
+- **Code Mode** — `execute-typescript` lets an agent batch many queries into one round trip.
+- **MCP Apps Result Viewer** — returns interactive result UIs inside Claude.
+- **OAuth 2.1 + static API keys** — OAuth for remote AI tools, keys for local clients.
+
+## Supported MCP tools
+
+`list-databases`, `list-collections`, `collection-schema`, `find`, `aggregate`, `count`, `distinct`, `query`, `sample-documents`, `execute-typescript`, `save-insight`.
+
+## Install modes
+
+- **VPS + Caddy + HTTPS** — `curl ... install.sh | sudo bash`. 2–3 minutes end-to-end, auto Let's Encrypt.
+- **Local Docker Compose** — evaluation on a laptop.
+- **Cloudflare Tunnel** — no inbound firewall, no DNS A record.
+- **Proxyless** — binds `127.0.0.1:3100` for Coolify / Traefik / nginx.
+
+## Databases supported
+
+- MongoDB (first-class)
+- PostgreSQL (first-class)
+- MySQL (roadmap)
+
+## Who it's for
+
+Teams that want AI agents on real production data without shipping rows to a third-party SaaS or writing a custom scrubbing pipeline. Self-hosted on the user's VPS; the VPS is the security boundary.
+
+## Not affiliated with
+
+DBGate, MongoDB Inc., Anthropic, OpenAI, or Google. MCP is an open protocol from Anthropic.
+
+## Contact
+
+- Issues: https://github.com/mgorabbani/askdb/issues
+- Discussions: https://github.com/mgorabbani/askdb/discussions

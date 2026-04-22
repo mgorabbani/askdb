@@ -3,27 +3,174 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AskDB — Give AI agents safe access to your database</title>
+    <title>AskDB — Give AI agents safe access to your database (MCP for MongoDB + Postgres)</title>
     <meta
       name="description"
-      content="Self-hosted MCP bridge for MongoDB and PostgreSQL. Sandbox your databases, control which fields the AI can see, and plug one /mcp endpoint into Claude, ChatGPT, and Cursor."
+      content="AskDB is a self-hosted, open-source MCP (Model Context Protocol) server that gives Claude, ChatGPT, Cursor, and Gemini safe, read-only access to your MongoDB and PostgreSQL databases. Sandbox production data, hide sensitive fields, and expose one /mcp endpoint to every AI tool."
     />
+    <meta
+      name="keywords"
+      content="MCP server, Model Context Protocol, MongoDB MCP, PostgreSQL MCP, AI database access, Claude MCP, ChatGPT MCP, Cursor MCP, Gemini database, self-hosted AI, database sandbox, PII redaction, field-level access control, AGPL, open source MCP, AskDB"
+    />
+    <meta name="author" content="AskDB" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="canonical" href="https://askdb.dev/" />
 
+    <meta property="og:site_name" content="AskDB" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:title" content="AskDB — Give AI agents safe access to your database" />
     <meta
       property="og:description"
-      content="Your MongoDB or Postgres, sandboxed. Your fields, controlled. One MCP endpoint for every AI tool."
+      content="Self-hosted MCP server for MongoDB and PostgreSQL. Sandboxed data, field-level control, one endpoint for Claude, ChatGPT, Cursor, and Gemini."
     />
-    <meta property="og:image" content="assets/cover-github.png" />
+    <meta property="og:image" content="https://askdb.dev/assets/cover-github.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="AskDB — MCP server for MongoDB and PostgreSQL" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://askdb.com" />
+    <meta property="og:url" content="https://askdb.dev/" />
 
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@mgorabbani" />
+    <meta name="twitter:creator" content="@mgorabbani" />
     <meta name="twitter:title" content="AskDB — Give AI agents safe access to your database" />
-    <meta name="twitter:description" content="Self-hosted MCP bridge for MongoDB and PostgreSQL." />
-    <meta name="twitter:image" content="assets/cover-github.png" />
+    <meta name="twitter:description" content="Self-hosted, open-source MCP server for MongoDB and PostgreSQL. Safe AI access in 2 minutes." />
+    <meta name="twitter:image" content="https://askdb.dev/assets/cover-github.png" />
+    <meta name="twitter:image:alt" content="AskDB — MCP server for MongoDB and PostgreSQL" />
 
     <link rel="icon" href="assets/logo.png" />
+    <link rel="apple-touch-icon" href="assets/logo.png" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://askdb.dev/#org",
+            "name": "AskDB",
+            "url": "https://askdb.dev/",
+            "logo": "https://askdb.dev/assets/logo.png",
+            "sameAs": [
+              "https://github.com/mgorabbani/askdb"
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://askdb.dev/#website",
+            "url": "https://askdb.dev/",
+            "name": "AskDB",
+            "description": "Self-hosted MCP server that gives AI agents safe access to MongoDB and PostgreSQL.",
+            "publisher": { "@id": "https://askdb.dev/#org" },
+            "inLanguage": "en"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://askdb.dev/#app",
+            "name": "AskDB",
+            "description": "Open-source, self-hosted MCP (Model Context Protocol) server that sandboxes production databases and exposes one /mcp endpoint to AI tools like Claude, ChatGPT, Cursor, and Gemini. Supports MongoDB and PostgreSQL with field-level visibility and PII auto-detection.",
+            "applicationCategory": "DeveloperApplication",
+            "applicationSubCategory": "Database Middleware",
+            "operatingSystem": "Linux, macOS, Docker",
+            "url": "https://askdb.dev/",
+            "downloadUrl": "https://github.com/mgorabbani/askdb",
+            "codeRepository": "https://github.com/mgorabbani/askdb",
+            "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+            "programmingLanguage": ["TypeScript", "Go"],
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "featureList": [
+              "Sandboxed copy of production MongoDB or PostgreSQL",
+              "Field-level visibility controls",
+              "PII auto-detection and redaction",
+              "MCP OAuth 2.1 + static API key auth",
+              "Multi-database discovery via databases://overview resource",
+              "Code Mode (execute-typescript) batches multi-query investigations",
+              "One /mcp endpoint works with Claude, ChatGPT, Cursor, Gemini, Claude Code"
+            ],
+            "keywords": "MCP, Model Context Protocol, MongoDB, PostgreSQL, AI agents, self-hosted, AGPL",
+            "publisher": { "@id": "https://askdb.dev/#org" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://askdb.dev/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "How long does setup take?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Under 10 minutes. Paste your MongoDB or Postgres URL, configure visibility, copy the MCP URL into your AI tool."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does AskDB write to my production database?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Never. It connects read-only to run mongodump (Mongo) or pg_dump (Postgres), then all queries go against the sandbox copy."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How is field filtering different from data masking?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Data masking replaces values with fakes. AskDB simply omits hidden fields entirely — the AI doesn't know they exist."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Which databases are supported today?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "MongoDB and PostgreSQL, both first-class. Pick the engine when you add a connection, or mix them in one workspace. MySQL is next on the roadmap."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I connect more than one database at once?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Every connection gets a plain-language description. Agents see a databases://overview resource plus a list-databases tool and pass a connectionId into every query call."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "OAuth vs API key — which do I use?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "OAuth is the remote-MCP standard and is recommended for Claude, ChatGPT, and Cursor. API keys exist for local clients (Claude Code, Cursor mcp.json, scripts) that expect a static bearer header."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How does the sandbox stay fresh?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Manual sync — click Sync Now in the dashboard. Scheduled sync is on the roadmap."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is AskDB really open source?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes — AGPLv3. Fork it, run it, modify it. If you run a modified version as a network service, share your modifications back."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
 
     <script>
         !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="Ir init Br Zr Ci jr $r Lr capture calculateEventProperties Yr register register_once register_for_session unregister unregister_for_session Jr getFeatureFlag getFeatureFlagPayload getFeatureFlagResult isFeatureEnabled reloadFeatureFlags updateFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey displaySurvey cancelPendingSurvey canRenderSurvey canRenderSurveyAsync Kr identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset setIdentity clearIdentity get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException captureLog startExceptionAutocapture stopExceptionAutocapture loadToolbar get_property getSessionProperty Wr zr createPersonProfile setInternalOrTestUser Xr Or en opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing get_explicit_consent_status is_capturing clear_opt_in_out_capturing Vr debug ki Gr getPageViewId captureTraceFeedback captureTraceMetric Nr".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
@@ -171,6 +318,8 @@
       }
 
       .nav-links a:hover { color: var(--accent-bright); }
+      .nav-links a.btn-primary,
+      .nav-links a.btn-primary:hover { color: var(--bg); }
 
       @media (max-width: 640px) {
         nav { padding: 16px; }
