@@ -11,7 +11,11 @@
 </p>
 
 <p align="center">
-  <video src="https://github.com/mgorabbani/askdb/raw/main/ui/public/askdb-promo.mp4" controls width="70%"></video>
+
+
+https://github.com/user-attachments/assets/baa53f34-b0b4-41ee-89b3-60d133e8004d
+
+
 </p>
 
 <p align="center">
