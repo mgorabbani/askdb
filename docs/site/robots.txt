@@ -77,4 +77,8 @@ Allow: /
 User-agent: MistralAI-User
 Allow: /
 
+# LLM-readable site summary for AI agents and crawlers
+# https://llmstxt.org/
+LLM-Content: https://askdb.dev/llms.txt
+
 Sitemap: https://askdb.dev/sitemap.xml
