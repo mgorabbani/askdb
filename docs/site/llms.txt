@@ -50,6 +50,21 @@ Teams that want AI agents on real production data without shipping rows to a thi
 
 DBGate, MongoDB Inc., Anthropic, OpenAI, or Google. MCP is an open protocol from Anthropic.
 
+## Docs
+
+- [README](https://github.com/mgorabbani/askdb/blob/main/README.md): project overview, quick start, and screenshots.
+- [FAQ](https://github.com/mgorabbani/askdb/blob/main/docs/faq.md): common questions about security, hosting, and supported clients.
+- [Code Mode](https://github.com/mgorabbani/askdb/blob/main/docs/code-mode.md): how the `execute-typescript` tool batches multi-step queries into one agent round trip.
+- [Changelog](https://github.com/mgorabbani/askdb/blob/main/CHANGELOG.md): release notes.
+- [Contributing](https://github.com/mgorabbani/askdb/blob/main/CONTRIBUTING.md): how to build from source and open a PR.
+- [Security policy](https://github.com/mgorabbani/askdb/blob/main/SECURITY.md): how to report vulnerabilities.
+
+## Optional
+
+- [Landing page brief](https://github.com/mgorabbani/askdb/blob/main/docs/LANDING_PAGE_BRIEF.md): positioning and messaging reference for askdb.dev.
+- [Self-hosted improvements plan](https://github.com/mgorabbani/askdb/blob/main/docs/plans/self-hosted-improvements.md): roadmap for the install flow.
+- [Unify MCP server plan](https://github.com/mgorabbani/askdb/blob/main/docs/plans/unify-mcp-server.md): architecture plan for a single MCP surface across engines.
+
 ## Contact
 
 - Issues: https://github.com/mgorabbani/askdb/issues
