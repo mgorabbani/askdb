@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { config as loadEnv } from "dotenv";
-import rateLimit from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import cookieParser from "cookie-parser";
 import { CSP_DIRECTIVES } from "./lib/csp.js";
 

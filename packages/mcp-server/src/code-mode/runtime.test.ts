@@ -255,7 +255,7 @@ test("makeBridge forwards its connectionId so sandbox calls hit the chosen DB", 
   await bridge.external_find({ collection: "users" });
 
   assert.equal(
-    (calls[0]?.parsed as { connectionId?: string }).connectionId,
+    (calls[0]?.parsed as { connectionId?: string })?.connectionId,
     "conn_multi"
   );
 });
