@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 import {
   Database,
   Plus,
@@ -19,10 +21,18 @@ interface Connection {
   dbType: string;
   databaseName: string;
   syncStatus: string;
+  syncInterval: string;
   lastSyncAt: string | null;
   sandboxPort: number | null;
   createdAt: string;
 }
+
+const SYNC_INTERVALS = [
+  { value: "6h", label: "Every 6 hours" },
+  { value: "12h", label: "Every 12 hours" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+] as const;
 
 export default function DashboardPage() {
   const [conns, setConns] = useState<Connection[]>([]);
@@ -35,6 +45,21 @@ export default function DashboardPage() {
     }
     setLoading(false);
   }, []);
+
+  const updateSyncInterval = useCallback(async (id: string, syncInterval: string) => {
+    setConns((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, syncInterval } : c))
+    );
+    const res = await fetch(`/api/connections/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ syncInterval }),
+    });
+    if (!res.ok) {
+      toast.error("Failed to update sync interval");
+      fetchConnections();
+    }
+  }, [fetchConnections]);
 
   useEffect(() => {
     fetchConnections();
@@ -137,7 +162,7 @@ export default function DashboardPage() {
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {conns.map((conn) => (
-                <ConnectionCard key={conn.id} conn={conn} />
+                <ConnectionCard key={conn.id} conn={conn} onIntervalChange={updateSyncInterval} />
               ))}
             </div>
           </div>
@@ -172,13 +197,13 @@ function StatCard({
   );
 }
 
-function ConnectionCard({ conn }: { conn: Connection }) {
+function ConnectionCard({ conn, onIntervalChange }: { conn: Connection; onIntervalChange: (id: string, interval: string) => void }) {
   const theme = dbTheme(conn.dbType);
   return (
     <Card className="group gap-0 overflow-hidden py-0 transition-all hover:border-primary/40 hover:shadow-sm">
       <Link
         to={`/dashboard/connections/${conn.id}/schema`}
-        className="block p-5"
+        className="block p-5 pb-3"
       >
         <div className="flex items-start gap-3">
           <div
@@ -201,7 +226,7 @@ function ConnectionCard({ conn }: { conn: Connection }) {
           </p>
         )}
 
-        <div className="mt-5 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
+        <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <Clock className="h-3 w-3" />
             {conn.lastSyncAt
@@ -214,6 +239,24 @@ function ConnectionCard({ conn }: { conn: Connection }) {
           </span>
         </div>
       </Link>
+      <div className="flex items-center border-t px-5 py-2.5">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          Sync
+        </span>
+        <Select value={conn.syncInterval} onValueChange={(value) => onIntervalChange(conn.id, value)}>
+          <SelectTrigger size="sm" className="ml-auto h-6 gap-1 rounded-md border bg-transparent px-2 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {SYNC_INTERVALS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </Card>
   );
 }

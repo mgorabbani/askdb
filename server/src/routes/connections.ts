@@ -23,6 +23,8 @@ const {
   queryMemories,
 } = schema;
 
+const VALID_SYNC_INTERVALS = ["6h", "12h", "daily", "weekly"] as const;
+
 export const connectionsRouter: ExpressRouter = Router();
 connectionsRouter.use(requireSession);
 
@@ -54,6 +56,7 @@ connectionsRouter.get("/", async (req, res) => {
       dbType: connections.dbType,
       databaseName: connections.databaseName,
       syncStatus: connections.syncStatus,
+      syncInterval: connections.syncInterval,
       lastSyncAt: connections.lastSyncAt,
       sandboxPort: connections.sandboxPort,
       createdAt: connections.createdAt,
@@ -150,6 +153,7 @@ connectionsRouter.get("/:id", async (req, res) => {
       databaseName: connections.databaseName,
       syncStatus: connections.syncStatus,
       syncError: connections.syncError,
+      syncInterval: connections.syncInterval,
       lastSyncAt: connections.lastSyncAt,
       sandboxPort: connections.sandboxPort,
       sandboxContainerId: connections.sandboxContainerId,
@@ -173,9 +177,10 @@ connectionsRouter.patch("/:id", async (req, res) => {
     return;
   }
 
-  const { name, description } = req.body as {
+  const { name, description, syncInterval } = req.body as {
     name?: string;
     description?: string | null;
+    syncInterval?: string;
   };
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -192,6 +197,13 @@ connectionsRouter.patch("/:id", async (req, res) => {
       typeof description === "string" && description.trim()
         ? description.trim()
         : null;
+  }
+  if (syncInterval !== undefined) {
+    if (!VALID_SYNC_INTERVALS.includes(syncInterval as (typeof VALID_SYNC_INTERVALS)[number])) {
+      res.status(400).json({ error: `syncInterval must be one of: ${VALID_SYNC_INTERVALS.join(", ")}` });
+      return;
+    }
+    updates.syncInterval = syncInterval;
   }
 
   if (Object.keys(updates).length <= 1) {
