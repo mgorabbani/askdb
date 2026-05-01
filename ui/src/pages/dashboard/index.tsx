@@ -226,13 +226,7 @@ function ConnectionCard({ conn, onIntervalChange }: { conn: Connection; onInterv
           </p>
         )}
 
-        <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <Clock className="h-3 w-3" />
-            {conn.lastSyncAt
-              ? `Synced ${timeAgo(conn.lastSyncAt)}`
-              : "Never synced"}
-          </span>
+        <div className="mt-4 flex items-center justify-end text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1 font-medium text-foreground/70 transition-colors group-hover:text-primary">
             Browse schema
             <ArrowUpRight className="h-3 w-3" />
@@ -242,7 +236,9 @@ function ConnectionCard({ conn, onIntervalChange }: { conn: Connection; onInterv
       <div className="flex items-center border-t px-5 py-2.5">
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Clock className="h-3 w-3" />
-          Sync
+          {conn.lastSyncAt
+            ? `Synced ${timeAgo(conn.lastSyncAt)}`
+            : "Never synced"}
         </span>
         <Select value={conn.syncInterval} onValueChange={(value) => onIntervalChange(conn.id, value)}>
           <SelectTrigger size="sm" className="ml-auto h-6 gap-1 rounded-md border bg-transparent px-2 text-xs">
