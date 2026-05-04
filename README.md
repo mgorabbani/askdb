@@ -19,7 +19,7 @@ https://github.com/user-attachments/assets/baa53f34-b0b4-41ee-89b3-60d133e8004d
 </p>
 
 <p align="center">
-  <a href="https://github.com/mgorabbani/askdb/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="AGPL v3 License" /></a>
+  <a href="https://github.com/mgorabbani/askdb/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License" /></a>
   <a href="https://github.com/mgorabbani/askdb/stargazers"><img src="https://img.shields.io/github/stars/mgorabbani/askdb?style=flat" alt="Stars" /></a>
   <a href="#try-it-locally-with-docker"><img src="https://img.shields.io/badge/docker--compose-ready-2496ED.svg?logo=docker&logoColor=white" alt="Docker Compose" /></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Streamable_HTTP-8A2BE2.svg" alt="MCP Streamable HTTP" /></a>
@@ -262,9 +262,9 @@ These invariants always hold:
 
 ## License
 
-AskDB is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+AskDB is licensed under the [MIT License](LICENSE).
 
-AGPLv3 means you can self-host, fork, and modify AskDB freely. If you run a modified version as a service accessible to others over a network, you must share your modifications under the same license.
+The MIT License means you can self-host, fork, modify, and use AskDB freely — including in commercial and proprietary projects — provided you keep the copyright and license notice.
 
 ## Star History
 
@@ -275,5 +275,5 @@ AGPLv3 means you can self-host, fork, and modify AskDB freely. If you run a modi
 ---
 
 <p align="center">
-  <sub>Open source under AGPLv3. Built for people who want AI to understand their data, not own it.</sub>
+  <sub>Open source under the MIT License. Built for people who want AI to understand their data, not own it.</sub>
 </p>

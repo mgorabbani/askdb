@@ -13,7 +13,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 - **Auto-generated secrets.** `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` are generated on first container boot into `/app/data/.secrets` (mode 600). User-provided env vars take precedence.
 - **OAuth hardening.** Per-path rate limiting on `/authorize`, `/token`, `/register`, `/revoke` (30/min). CSRF double-submit token on consent POST. Redirect-URI validation for DCR (rejects wildcards, non-HTTPS except localhost, lists >5). MCP session-transport map capped at 1000.
 - **Dockerfile `HEALTHCHECK`** on `/api/health`.
-- **Community files.** AGPLv3 `LICENSE`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `CONTRIBUTING.md`, `SECURITY.md`, this `CHANGELOG.md`.
+- **Community files.** MIT `LICENSE`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `CONTRIBUTING.md`, `SECURITY.md`, this `CHANGELOG.md`.
 
 ### Changed
 
