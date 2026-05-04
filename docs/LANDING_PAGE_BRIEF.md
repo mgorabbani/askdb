@@ -6,7 +6,7 @@ A handoff document for the landing page developer. Everything you need to build 
 **Tagline:** Give AI agents safe access to your database.
 **Subhead:** Your MongoDB or Postgres, sandboxed. Your fields, controlled. One MCP endpoint for every AI tool.
 **Repo:** https://github.com/mgorabbani/askdb
-**License:** AGPL v3 (self-hostable open source)
+**License:** MIT (self-hostable open source)
 
 ---
 
@@ -251,7 +251,7 @@ Callout below: *Docker socket hardening: a `tecnativa/docker-socket-proxy` sidec
 - **Can I connect more than one database at once?** Yes. Every connection gets a plain-language description. Agents see a `databases://overview` plus a `list-databases` tool and pass a `connectionId` into every query call.
 - **How does the sandbox stay fresh?** Manual sync — click "Sync Now" in the dashboard. Scheduled sync is on the roadmap.
 - **Is this secure enough for production data?** AskDB enforces read-only access, field stripping at query time, query validation, encrypted connection strings, and full audit logging.
-- **Is it really open source?** Yes — AGPLv3. Fork it, run it, modify it. If you run a modified version as a network service, share your modifications back.
+- **Is it really open source?** Yes — MIT licensed. Fork it, run it, modify it, ship it in commercial products. Just keep the copyright notice.
 
 ### Section 12 — Final CTA
 
@@ -259,11 +259,11 @@ Repeat the install command, centered, with one line above: *Ready in 2 minutes o
 
 ### Section 13 — Footer
 
-- Left: logo + tagline + AGPLv3 note.
+- Left: logo + tagline + MIT license note.
 - Middle: Product (Features, How it works, Security, Roadmap).
 - Middle-right: Resources (GitHub, Docs, Changelog, License).
 - Right: Community (GitHub Issues, Discussions, Security Policy).
-- Bottom line: *© AskDB. Open source under AGPLv3. Built for people who want AI to understand their data, not own it.*
+- Bottom line: *© AskDB. Open source under the MIT License. Built for people who want AI to understand their data, not own it.*
 
 ---
 
