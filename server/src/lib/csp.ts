@@ -6,15 +6,15 @@
 
 export type CspDirectives = Record<string, string[]>;
 
-const isDev = process.env.UI_DEV_MIDDLEWARE === "1";
+const isDevMiddleware = process.env.UI_DEV_MIDDLEWARE === "1";
 
 export const CSP_DIRECTIVES: CspDirectives = {
   "default-src": ["'self'"],
-  "script-src": ["'self'", ...(isDev ? ["'unsafe-inline'", "'unsafe-eval'"] : [])],
+  "script-src": ["'self'", ...(isDevMiddleware ? ["'unsafe-inline'", "'unsafe-eval'"] : [])],
   "style-src": ["'self'", "'unsafe-inline'"],
   "img-src": ["'self'", "data:", "blob:"],
   "font-src": ["'self'", "data:"],
-  "connect-src": ["'self'", ...(isDev ? ["ws://localhost:*"] : [])],
+  "connect-src": ["'self'", ...(isDevMiddleware ? ["ws://localhost:*"] : [])],
   "frame-ancestors": ["'none'"],
   "form-action": ["'self'"],
   "base-uri": ["'self'"],
