@@ -2,9 +2,15 @@ import { db } from "../../db/index.js";
 import { connections } from "../../db/schema.js";
 import { syncConnection } from "../sync.js";
 
-const SYNC_HOUR_LOCAL = 5;
-const DAILY_MS = 24 * 60 * 60 * 1000;
 const BOOT_CATCHUP_DELAY_MS = 15_000;
+const TICK_INTERVAL_MS = 60 * 60 * 1000;
+
+const INTERVAL_MS: Record<string, number> = {
+  "6h": 6 * 60 * 60 * 1000,
+  "12h": 12 * 60 * 60 * 1000,
+  daily: 24 * 60 * 60 * 1000,
+  weekly: 7 * 24 * 60 * 60 * 1000,
+};
 
 let timer: NodeJS.Timeout | null = null;
 let catchupTimer: NodeJS.Timeout | null = null;
@@ -41,11 +47,11 @@ function scheduleBootCatchup(): void {
 
 async function runCatchupIfStale(): Promise<void> {
   const rows = await db.select().from(connections);
-  const cutoff = new Date(Date.now() - DAILY_MS);
   const stale = rows.filter((c) => {
     if (c.syncStatus === "SYNCING") return false;
+    const intervalMs = INTERVAL_MS[c.syncInterval] ?? INTERVAL_MS["daily"];
     if (!c.lastSyncAt) return true;
-    return c.lastSyncAt < cutoff;
+    return c.lastSyncAt < new Date(Date.now() - intervalMs);
   });
 
   if (stale.length === 0) {
@@ -54,44 +60,38 @@ async function runCatchupIfStale(): Promise<void> {
   }
 
   console.log(
-    `[sync-scheduler] boot catch-up — ${stale.length} connection(s) missed their daily sync`,
+    `[sync-scheduler] boot catch-up — ${stale.length} connection(s) overdue`,
   );
   await runSyncBatch(stale, "boot-catchup");
 }
 
 function scheduleNext(): void {
-  const next = nextRunAt(new Date());
-  const delay = next.getTime() - Date.now();
   console.log(
-    `[sync-scheduler] next run at ${next.toString()} (in ${formatDelay(delay)})`,
+    `[sync-scheduler] next tick in ${formatDelay(TICK_INTERVAL_MS)}`,
   );
   timer = setTimeout(() => {
     runTick()
       .catch((err) => console.error("[sync-scheduler] tick failed:", err))
       .finally(scheduleNext);
-  }, delay);
-}
-
-function nextRunAt(now: Date): Date {
-  const next = new Date(now);
-  next.setHours(SYNC_HOUR_LOCAL, 0, 0, 0);
-  if (next.getTime() <= now.getTime()) {
-    next.setDate(next.getDate() + 1);
-  }
-  return next;
+  }, TICK_INTERVAL_MS);
 }
 
 async function runTick(): Promise<void> {
   const rows = await db.select().from(connections);
-  const due = rows.filter((c) => c.syncStatus !== "SYNCING");
+  const due = rows.filter((c) => {
+    if (c.syncStatus === "SYNCING") return false;
+    const intervalMs = INTERVAL_MS[c.syncInterval] ?? INTERVAL_MS["daily"];
+    if (!c.lastSyncAt) return true;
+    return Date.now() - c.lastSyncAt.getTime() >= intervalMs;
+  });
 
   if (due.length === 0) {
-    console.log("[sync-scheduler] daily run — no connections to sync");
+    console.log("[sync-scheduler] tick — no connections due");
     return;
   }
 
-  console.log(`[sync-scheduler] daily run — syncing ${due.length} connection(s)`);
-  await runSyncBatch(due, "daily");
+  console.log(`[sync-scheduler] tick — syncing ${due.length} connection(s)`);
+  await runSyncBatch(due, "scheduled");
 }
 
 type ConnectionRow = typeof connections.$inferSelect;

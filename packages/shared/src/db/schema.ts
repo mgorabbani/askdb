@@ -67,6 +67,7 @@ export const connections = sqliteTable("connections", {
   syncStatus: text("syncStatus").notNull().default("IDLE"),
   syncError: text("syncError"),
   lastSyncAt: integer("lastSyncAt", { mode: "timestamp" }),
+  syncInterval: text("syncInterval").notNull().default("daily"), // "6h" | "12h" | "daily" | "weekly"
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   userId: text("userId")
