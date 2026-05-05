@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { requireConfig, saveConfig, loadConfig } from "../config.js";
+import { requireConfig, saveConfig } from "../config.js";
 import { AskdbClient } from "../api.js";
 
 export const connectionsCommand = new Command("connections")
