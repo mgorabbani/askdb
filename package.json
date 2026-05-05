@@ -17,16 +17,30 @@
     "test": "pnpm --filter @askdb/mcp-server test",
     "db:generate": "pnpm --filter @askdb/shared db:generate",
     "db:migrate": "pnpm --filter @askdb/shared db:migrate",
-    "db:studio": "pnpm --filter @askdb/shared db:studio"
+    "db:studio": "pnpm --filter @askdb/shared db:studio",
+    "lint": "oxlint .",
+    "format": "oxfmt --check .",
+    "format:fix": "oxfmt --write .",
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "oxfmt": "^0.47.0",
+    "oxlint": "^1.62.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "better-sqlite3"
+    ]
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "oxfmt --write",
+      "oxlint --fix"
     ]
   }
 }

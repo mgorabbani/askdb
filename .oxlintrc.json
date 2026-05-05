@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "rules": {
+    "no-console": "off",
+    "react-in-jsx-scope": "off",
+    "no-unassigned-import": "off",
+    "consistent-function-scoping": "off",
+    "no-await-in-loop": "off",
+    "no-array-sort": "off",
+    "no-async-endpoint-handlers": "off",
+    "no-underscore-dangle": "off",
+    "no-map-spread": "off",
+    "no-named-as-default": "warn",
+    "prefer-add-event-listener": "off"
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**", ".output/**"]
+}
